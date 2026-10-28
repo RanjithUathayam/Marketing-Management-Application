@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.angular/
+coverage/
+.env
+.env.*
+!.env.example
+backend/uploads/
+backend/test-uploads/
+*.log
+.DS_Store
+Thumbs.db
