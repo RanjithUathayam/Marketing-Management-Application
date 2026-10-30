@@ -55,6 +55,18 @@ export async function assignedBeatIds(userIds, tx) {
   return rows.map(r => r.BeatId);
 }
 
+/** Assigned beats plus whatever today's journey plan points at — an approved beat change can move a day to an unassigned beat. */
+export async function workingBeatIds(userIds, tx) {
+  if (!userIds) return assignedBeatIds(null, tx);
+  const { year, month, day } = localYearMonth();
+  const assigned = await assignedBeatIds(userIds, tx);
+  const planned = await db.query(
+    `SELECT DISTINCT d.BeatId FROM dbo.JourneyPlanDays d JOIN dbo.JourneyPlans p ON p.PlanId = d.PlanId JOIN dbo.Beats b ON b.BeatId = d.BeatId
+      WHERE b.IsActive = 1 AND p.PlanYear = @y AND p.PlanMonth = @m AND p.UserId IN (SELECT value FROM OPENJSON(@u)) AND d.PlanDay = @d`,
+    { y: year, m: month, d: day, u: JSON.stringify(userIds) }, tx);
+  return [...new Set([...assigned, ...planned.map(r => r.BeatId)])];
+}
+
 /** Compact counts used on approval cards. */
 export function insightStrip(list) {
   return {

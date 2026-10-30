@@ -7,10 +7,11 @@ import { DtPipe, InrPipe } from '../../core/format';
 import { StateView, StatusPill } from '../../shared/ui.components';
 import { AttendanceWidget } from '../../shared/attendance-widget';
 import { Avatar } from '../../shared/avatar';
+import { BeatChangeSheet } from '../../shared/beat-change-sheet';
 
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, InrPipe, DtPipe, StateView, StatusPill, AttendanceWidget, Avatar],
+  imports: [RouterLink, InrPipe, DtPipe, StateView, StatusPill, AttendanceWidget, Avatar, BeatChangeSheet],
   host: { class: 'sc' },
   template: `
     <header class="bar grad" style="padding-bottom:16px">
@@ -27,10 +28,15 @@ import { Avatar } from '../../shared/avatar';
               <div class="between">
                 <div><div style="font-size:11px;opacity:.85;font-weight:700">{{ tb.planned ? "TODAY'S BEAT" : 'YOUR BEAT' }}</div>
                   <div style="font-size:17px;font-weight:800;margin-top:3px">{{ tb.name }}</div>
-                  <div style="font-size:11.5px;opacity:.85;margin-top:2px">{{ tb.outlets }} outlets · {{ tb.pending }} pending</div></div>
-                <button class="bar-preview" type="button" [routerLink]="['/outlets']" [queryParams]="{ beatId: tb.id }">Start →</button>
+                  <div style="font-size:11.5px;opacity:.85;margin-top:2px">{{ tb.outlets }} outlets · {{ tb.pending }} pending</div>
+                  @if (d.pendingBeatChange; as pc) { <div style="font-size:11px;font-weight:700;margin-top:6px">⏳ Change to {{ pc.toBeat }} awaiting approval</div> }</div>
+                <div class="row" style="gap:8px">
+                  <button class="bar-preview" type="button" [disabled]="!!d.pendingBeatChange" (click)="bcOpen.set(true)">⇄ Change Beat</button>
+                  <button class="bar-preview" type="button" [routerLink]="['/outlets']" [queryParams]="{ beatId: tb.id }">Start →</button>
+                </div>
               </div>
             </div>
+            <app-beat-change-sheet [(open)]="bcOpen" [from]="tb" (sent)="load()" />
           } @else {
             <div class="card p mb12"><div class="muted">No beat assigned yet. Contact your manager.</div></div>
           }
@@ -89,6 +95,7 @@ export class HomePage {
   private api = inject(Api);
   d = signal<ExecDashboard | null>(null);
   err = signal<string | null>(null);
+  bcOpen = signal(false);
   abs = Math.abs;
   min = Math.min;
   quick = [

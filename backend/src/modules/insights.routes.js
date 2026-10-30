@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { authorize, MANAGERS, targetUserId, scopeUserIds, scopeFilter, assertUserInScope, isManager } from '../middleware/auth.js';
 import { targetSummary, teamAchievement, salesBetween, workingDaysUpTo } from '../services/targets.js';
-import { beatInsights, assignedBeatIds } from '../services/beats.js';
+import { beatInsights, assignedBeatIds, workingBeatIds } from '../services/beats.js';
 import { badRequest, forbidden } from '../utils/http.js';
 import { localDate, localYearMonth, utcRange, isoDate, addDays, toIso, monthRange } from '../utils/dates.js';
 import { pathMeters, outletPerformance } from '../domain/rules.js';
@@ -83,10 +83,10 @@ router.get('/tracking/team', authorize(...MANAGERS), async (req, res) => {
 router.get('/dashboard/exec', async (req, res) => {
   const u = req.user.id, today = localDate();
   const { start, end } = utcRange(today);
-  const beatIds = await assignedBeatIds([u]);
+  const beatIds = await workingBeatIds([u]);
   const beats = await beatInsights({ beatIds, visitUserIds: [u], planUserId: u });
   const todayBeat = beats.find(b => b.plannedToday) ?? beats[0] ?? null;
-  const [[sales], [avg], [visited], outlets, recent, [pads], [unread]] = await db.queryMulti(
+  const [[sales], [avg], [visited], outlets, recent, [pads], [unread], [change]] = await db.queryMulti(
     `SELECT ISNULL(SUM(TotalAmount),0) AS amt FROM dbo.Orders WHERE UserId = @u AND OrderedAt >= @start AND OrderedAt < @end;
      SELECT ISNULL(SUM(TotalAmount),0) / 30.0 AS amt FROM dbo.Orders WHERE UserId = @u AND OrderedAt >= DATEADD(DAY, -30, @start) AND OrderedAt < @start;
      SELECT COUNT(*) AS n FROM dbo.OutletVisits v JOIN dbo.Outlets o ON o.OutletId = v.OutletId
@@ -98,7 +98,9 @@ router.get('/dashboard/exec', async (req, res) => {
        FROM dbo.Orders o JOIN dbo.Outlets ot ON ot.OutletId = o.OutletId WHERE o.UserId = @u ORDER BY o.OrderedAt DESC;
      SELECT COUNT(*) AS pending, COUNT(DISTINCT dc.DcId) AS dcs FROM dbo.SamplePads sp JOIN dbo.DeliveryChallans dc ON dc.DcId = sp.DcId
       WHERE dc.UserId = @u AND sp.AckAt IS NULL;
-     SELECT COUNT(*) AS n FROM dbo.Notifications WHERE UserId = @u AND IsRead = 0;`,
+     SELECT COUNT(*) AS n FROM dbo.Notifications WHERE UserId = @u AND IsRead = 0;
+     SELECT TOP 1 r.RequestId, t.BeatName FROM dbo.BeatChangeRequests r JOIN dbo.Beats t ON t.BeatId = r.ToBeatId
+      WHERE r.UserId = @u AND r.ForDate = @today AND r.Status = 'PENDING' ORDER BY r.CreatedAt DESC;`,
     { u, start, end, today, beat: todayBeat?.id ?? null, beats: JSON.stringify(beatIds) });
   const target = await targetSummary(u);
   const outstanding = outlets.reduce((s, o) => s + Number(o.Outstanding), 0);
@@ -107,6 +109,7 @@ router.get('/dashboard/exec', async (req, res) => {
   res.json({
     todayBeat: todayBeat ? { id: todayBeat.id, code: todayBeat.code, name: todayBeat.name, area: todayBeat.area, outlets: todayBeat.outlets,
       visited: visited.n, pending: Math.max(0, todayBeat.outlets - visited.n), planned: todayBeat.plannedToday } : null,
+    pendingBeatChange: change ? { id: change.RequestId, toBeat: change.BeatName } : null,
     todaySales: Number(sales.amt), salesVsAvgPct: avgDaily ? Math.round(((Number(sales.amt) - avgDaily) / avgDaily) * 100) : null,
     outstanding, highOutstandingOutlets: high,
     target: { pct: target.achievedPct, achieved: target.achieved, monthly: target.monthlyTarget, balance: target.balance, daysLeft: target.daysLeft },

@@ -41,9 +41,9 @@ List endpoints accept `page` and `pageSize` and return `{ items, total, page, pa
 | PUT | `/plans/:id/days` | `{ days: [{day, beatId}] }` — assigned beats only, no Sundays, one beat/day; locked while pending |
 | POST | `/plans/:id/submit` | DRAFT/SENTBACK → PENDING, notifies manager |
 | POST | `/plans/:id/approve` · `/plans/:id/send-back` | `{ note }` (required to send back) |
-| POST | `/beat-changes` | `{ fromBeatId, toBeatId, forDate?, remarks }` |
+| POST | `/beat-changes` | `{ fromBeatId, toBeatId, forDate?, remarks }` — one pending request per date, no Sundays |
 | GET | `/beat-changes?status&withInsights=true` | Own (exec) / team (manager) |
-| POST | `/beat-changes/:id/approve|reject` | Approval moves that day of the plan to the new beat |
+| POST | `/beat-changes/:id/approve|reject` | Approval points that day of the plan at the new beat (creating the plan day if none exists); the new beat then shows on the home card, outlets and beat list |
 
 ## Outlets, visits, payments
 | Method | Path | Notes |

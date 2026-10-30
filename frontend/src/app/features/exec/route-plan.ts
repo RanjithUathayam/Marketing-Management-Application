@@ -8,6 +8,7 @@ import { Beat, PlanStatus } from '../../core/models';
 import { BEAT_COLOR, DtPipe, todayIso } from '../../core/format';
 import { AppBar, Sheet, StateView, VisitBadge } from '../../shared/ui.components';
 import { BeatList } from '../../shared/beat-list';
+import { BeatChangeSheet } from '../../shared/beat-change-sheet';
 import { PlanCalendar } from '../../shared/plan-calendar';
 import { PlanStore } from './plan.store';
 
@@ -18,7 +19,7 @@ const STATUS: Record<PlanStatus, [string, string]> = {
 /* ── My Journey Plan ── */
 @Component({
   selector: 'app-route-plan',
-  imports: [FormsModule, RouterLink, AppBar, Sheet, StateView, BeatList, PlanCalendar, VisitBadge],
+  imports: [FormsModule, RouterLink, AppBar, Sheet, StateView, BeatList, PlanCalendar, BeatChangeSheet],
   host: { class: 'sc' },
   template: `
     <app-bar title="My Journey Plan" [sub]="monthSub()" [back]="false">
@@ -62,21 +63,7 @@ const STATUS: Record<PlanStatus, [string, string]> = {
       <button class="btn primary" type="button" [disabled]="busy()" (click)="saveLog()">Save Visit</button>
     </app-sheet>
 
-    <app-sheet [(open)]="bcOpen" heading="Beat Change Request" [subheading]="'From ' + (bcFrom()?.name ?? '')">
-      <div class="sbox mb12"><span>🔍</span><input [(ngModel)]="bcQuery" placeholder="Search beats…" aria-label="Search beats"></div>
-      @for (b of bcList(); track b.id) {
-        <button type="button" class="lrow" (click)="bcPick.set(b.id)" [attr.aria-pressed]="bcPick() === b.id">
-          <div class="av" [style.background]="color(b)">{{ b.code.replace('BT-', '') }}</div>
-          <div class="lr-main"><div class="bname-row"><b>{{ b.name }}</b><app-visit-badge [ind]="b.indicator" /></div>
-            <span>{{ b.code }} · {{ b.outlets }} outlets · {{ b.indicator.label }} this month</span></div>
-          <div style="font-size:18px;color:var(--g)">{{ bcPick() === b.id ? '✓' : '' }}</div>
-        </button>
-      } @empty { <div class="empty">No beats match.</div> }
-      <div class="fld mt12"><label for="bcd">For date</label><input id="bcd" type="date" [min]="today" [(ngModel)]="bcDate"></div>
-      <div class="fld"><label for="bcr">Remarks (required)</label><textarea id="bcr" [(ngModel)]="bcRemark" placeholder="Reason for beat change…" maxlength="400"></textarea></div>
-      <button class="btn primary" type="button" [disabled]="busy()" (click)="submitChange()">Send Change Request →</button>
-      <div class="tiny center mt8">Request is sent to {{ auth.user()?.manager?.name || 'your manager' }} for approval.</div>
-    </app-sheet>`,
+    <app-beat-change-sheet [(open)]="bcOpen" [from]="bcFrom()" />`,
 })
 export class RoutePlanPage {
   store = inject(PlanStore);
@@ -86,17 +73,13 @@ export class RoutePlanPage {
   loading = signal(true);
   err = signal<string | null>(null);
   busy = signal(false);
-  today = todayIso();
   codes = computed(() => new Map(this.store.beats().map(b => [b.id, b.code])));
   chip = computed(() => STATUS[this.store.plan()?.status ?? 'DRAFT']);
   monthSub = computed(() => { const p = this.store.plan(); return p ? new Date(p.year, p.month - 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' }) : ''; });
   color = (b: Beat) => BEAT_COLOR[b.colorTag];
 
   logOpen = signal(false); logBeat = signal<Beat | null>(null); logV = 1; logO = 0;
-  bcOpen = signal(false); bcFrom = signal<Beat | null>(null); bcPick = signal<number | null>(null);
-  allBeats = signal<Beat[]>([]); bcQuery = ''; bcRemark = ''; bcDate = this.today;
-  bcList = () => this.allBeats().filter(b => b.id !== this.bcFrom()?.id &&
-    (b.name.toLowerCase().includes(this.bcQuery.toLowerCase()) || b.code.toLowerCase().includes(this.bcQuery.toLowerCase())));
+  bcOpen = signal(false); bcFrom = signal<Beat | null>(null);
 
   constructor() { this.load(); }
   async load() {
@@ -117,21 +100,7 @@ export class RoutePlanPage {
     } catch (e) { this.ui.error(errorMessage(e)); }
     finally { this.busy.set(false); }
   }
-  async openChange(b: Beat) {
-    this.bcFrom.set(b); this.bcPick.set(null); this.bcRemark = ''; this.bcQuery = ''; this.bcOpen.set(true);
-    try { this.allBeats.set(await this.api.get<Beat[]>('/beats', { scope: 'all' })); } catch (e) { this.ui.error(errorMessage(e)); }
-  }
-  async submitChange() {
-    if (!this.bcPick()) { this.ui.error('Select a beat'); return; }
-    if (this.bcRemark.trim().length < 3) { this.ui.error('Remarks required'); return; }
-    this.busy.set(true);
-    try {
-      await this.api.post('/beat-changes', { fromBeatId: this.bcFrom()!.id, toBeatId: this.bcPick(), forDate: this.bcDate, remarks: this.bcRemark.trim() });
-      this.bcOpen.set(false);
-      this.ui.success('📤 Beat change request sent for approval');
-    } catch (e) { this.ui.error(errorMessage(e)); }
-    finally { this.busy.set(false); }
-  }
+  openChange(b: Beat) { this.bcFrom.set(b); this.bcOpen.set(true); }
 }
 
 /* ── Build plan: tap dates, assign a beat ── */

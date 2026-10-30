@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '../db/index.js';
 import { authorize, MANAGERS, scopeUserIds, isManager } from '../middleware/auth.js';
 import { uploader, publicPath, removeUploaded } from '../middleware/upload.js';
-import { assignedBeatIds } from '../services/beats.js';
+import { workingBeatIds } from '../services/beats.js';
 import { notify, managerOf } from '../services/notify.js';
 import { badRequest, notFound, forbidden, conflict, paging, paged } from '../utils/http.js';
 import { localDate } from '../utils/dates.js';
@@ -40,9 +40,9 @@ export function outletDto(o, here) {
   };
 }
 
-/** Beats whose outlets the caller may see. */
+/** Beats whose outlets the caller may see (assigned, plus today's planned beat from an approved beat change). */
 async function visibleBeatIds(user) {
-  return assignedBeatIds(await scopeUserIds(user));
+  return workingBeatIds(await scopeUserIds(user));
 }
 export async function assertOutletVisible(user, outletId) {
   const o = await db.one('SELECT BeatId, CreatedBy, ApprovalStatus FROM dbo.Outlets WHERE OutletId = @id', { id: outletId });

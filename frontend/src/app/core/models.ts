@@ -110,6 +110,7 @@ export interface Slab { uptoPct: number; ratePct: number; label: string }
 
 export interface ExecDashboard {
   todayBeat: { id: number; code: string; name: string; area: string; outlets: number; visited: number; pending: number; planned: boolean } | null;
+  pendingBeatChange: { id: number; toBeat: string } | null;
   todaySales: number; salesVsAvgPct: number | null; outstanding: number; highOutstandingOutlets: number;
   target: { pct: number; achieved: number; monthly: number; balance: number; daysLeft: number };
   recentOrders: { id: number; orderNo: string; orderedAt: string; totalAmount: number; status: OrderStatus; outletName: string; items: number }[];

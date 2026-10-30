@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { authorize, MANAGERS, scopeUserIds, targetUserId, assertUserInScope, scopeFilter, isManager } from '../middleware/auth.js';
-import { beatInsights, assignedBeatIds, insightStrip } from '../services/beats.js';
+import { beatInsights, assignedBeatIds, workingBeatIds, insightStrip } from '../services/beats.js';
 import { actionRequest } from '../services/approvals.js';
 import { notify, managerOf } from '../services/notify.js';
 import { badRequest, notFound, forbidden, conflict } from '../utils/http.js';
@@ -11,7 +11,7 @@ import { localDate, localYearMonth, daysInMonth, weekday, toIso } from '../utils
 export const router = Router();
 
 /* ── Beats ─────────────────────────────────────────────────────────────
-   GET /beats            → caller's assigned beats with insights (exec) or ?userId=<member>
+   GET /beats            → caller's assigned beats (+ today's planned beat) with insights (exec) or ?userId=<member>
    GET /beats?scope=team → every beat assigned to the manager's team, team-wide visits
    GET /beats?scope=all  → every active beat (beat-change search), caller's visits          */
 router.get('/beats', async (req, res) => {
@@ -19,10 +19,10 @@ router.get('/beats', async (req, res) => {
   if (scope === 'team') {
     if (!isManager(req.user)) throw forbidden();
     const team = await scopeUserIds(req.user);
-    return res.json(await beatInsights({ beatIds: await assignedBeatIds(team), visitUserIds: team }));
+    return res.json(await beatInsights({ beatIds: await workingBeatIds(team), visitUserIds: team }));
   }
   const userId = await targetUserId(req);
-  const beatIds = scope === 'all' ? await assignedBeatIds(null) : await assignedBeatIds([userId]);
+  const beatIds = scope === 'all' ? await assignedBeatIds(null) : await workingBeatIds([userId]);
   res.json(await beatInsights({ beatIds, visitUserIds: [userId], planUserId: userId }));
 });
 
@@ -31,8 +31,7 @@ router.post('/beats/:id/visits', async (req, res) => {
   const beatId = Number(req.params.id);
   const b = z.object({ visited: z.coerce.number().int().min(1), ordered: z.coerce.number().int().min(0) })
     .refine(x => x.ordered <= x.visited, 'Ordered dealers cannot exceed dealers visited').parse(req.body);
-  const assigned = await db.one('SELECT 1 AS x FROM dbo.BeatAssignments WHERE BeatId = @b AND UserId = @u', { b: beatId, u: req.user.id });
-  if (!assigned) throw forbidden('This beat is not assigned to you');
+  if (!(await workingBeatIds([req.user.id])).includes(beatId)) throw forbidden('This beat is not assigned to you');
   await db.exec('dbo.usp_LogBeatVisit', { UserId: req.user.id, BeatId: beatId, VisitDate: localDate(), Visited: b.visited, Ordered: b.ordered });
   const [beat] = await beatInsights({ beatIds: [beatId], visitUserIds: [req.user.id], planUserId: req.user.id });
   res.status(201).json(beat);
@@ -163,6 +162,9 @@ router.post('/beat-changes', async (req, res) => {
   }).refine(x => x.fromBeatId !== x.toBeatId, 'Choose a different beat').parse(req.body);
   const forDate = b.forDate ?? localDate();
   if (forDate < localDate()) throw badRequest('Beat change must be for today or a future date');
+  if (weekday(+forDate.slice(0, 4), +forDate.slice(5, 7), +forDate.slice(8, 10)) === 0) throw badRequest('That date is a Sunday (week-off)');
+  const pending = await db.one(`SELECT 1 AS x FROM dbo.BeatChangeRequests WHERE UserId = @u AND ForDate = @d AND Status = 'PENDING'`, { u: req.user.id, d: forDate });
+  if (pending) throw conflict('A beat change for that date is already waiting for approval');
   const exists = await db.query('SELECT BeatId FROM dbo.Beats WHERE IsActive = 1 AND BeatId IN (@a, @b)', { a: b.fromBeatId, b: b.toBeatId });
   if (exists.length !== 2) throw badRequest('Unknown beat');
   const r = await db.one(
@@ -190,7 +192,7 @@ router.get('/beat-changes', async (req, res) => {
   res.json(list);
 });
 
-/* Approving moves the plan day (if any) for that date to the new beat. */
+/* Approving points that date's plan day at the new beat — creating the day (and the month's plan) when none exists. */
 async function actionBeatChange(req, approve) {
   const id = Number(req.params.id);
   const { remark } = z.object({ remark: z.string().trim().max(300).optional() }).parse(req.body ?? {});
@@ -199,8 +201,14 @@ async function actionBeatChange(req, approve) {
     if (approve) {
       const d = toIso(row.ForDate);
       await db.query(
-        `UPDATE d SET BeatId = @to FROM dbo.JourneyPlanDays d JOIN dbo.JourneyPlans p ON p.PlanId = d.PlanId
-          WHERE p.UserId = @u AND p.PlanYear = @y AND p.PlanMonth = @m AND d.PlanDay = @day`,
+        `DECLARE @plan INT = (SELECT PlanId FROM dbo.JourneyPlans WITH (UPDLOCK, HOLDLOCK) WHERE UserId = @u AND PlanYear = @y AND PlanMonth = @m);
+         IF @plan IS NULL
+         BEGIN
+           INSERT dbo.JourneyPlans (UserId, PlanYear, PlanMonth) VALUES (@u, @y, @m);
+           SET @plan = SCOPE_IDENTITY();
+         END
+         UPDATE dbo.JourneyPlanDays SET BeatId = @to WHERE PlanId = @plan AND PlanDay = @day;
+         IF @@ROWCOUNT = 0 INSERT dbo.JourneyPlanDays (PlanId, PlanDay, BeatId) VALUES (@plan, @day, @to);`,
         { to: row.ToBeatId, u: row.UserId, y: +d.slice(0, 4), m: +d.slice(5, 7), day: +d.slice(8, 10) }, tx);
     }
   });
