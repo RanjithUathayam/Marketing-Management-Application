@@ -23,7 +23,7 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
       <button class="bar-preview" type="button" [disabled]="!store.totals().qty" (click)="preview()">Preview →</button>
       <button class="bico" type="button" (click)="router.navigateByUrl('/order')" aria-label="Add products">＋</button>
     </app-bar>
-    <div class="body" style="padding:10px 10px 4px" id="mx-body">
+    <div class="body pad" id="mx-body">
       <app-state [loading]="loading()" [error]="err()" (retry)="load()">
         @for (p of products(); track p.id) {
           <div class="card" style="margin-bottom:9px;overflow:hidden" [id]="'mp-' + p.id">
@@ -66,7 +66,7 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
                 @if (kctx()?.mode === 'all' && kctx()?.pid === p.id) {
                   <div class="asz-banner">📐 All-Sizes Mode: {{ colorName(p, kctx()!.colorId) }} <span style="flex:1;font-weight:500;opacity:.85">Qty fills all sizes</span><button type="button" (click)="closeKpad()">✕ Clear</button></div>
                 }
-                <div class="row mb12" style="gap:6px">
+                <div class="row mb12 mx-tools" style="gap:6px">
                   <div class="sbox" style="flex:1;padding:6px 10px"><span>🔍</span><input [ngModel]="colorQuery()[p.id] || ''" (ngModelChange)="setQuery(p.id, $event)" placeholder="Search colour…" [attr.aria-label]="'Search colour in ' + p.name"></div>
                   <div class="seg" style="padding:2px">@for (c of cats; track c[0]) { <button type="button" style="padding:6px 8px;font-size:10px" [class.on]="(catSel()[p.id] || 'all') === c[0]" (click)="setCat(p.id, c[0])">{{ c[1] }}</button> }</div>
                 </div>
@@ -74,7 +74,7 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
                   @for (l of legend; track l.st) { <span style="display:flex;align-items:center;gap:3px;font-size:9px;color:#6b7280;font-weight:600"><span style="width:8px;height:8px;border-radius:2px" [style.background]="l.c"></span>{{ l.lbl }}@if (tally(p, l.st); as n) {<b class="sn-mini" style="padding:0 4px">{{ n }}</b>}</span> }
                 </div>
                 <div style="overflow-x:auto">
-                  <div style="min-width:330px">
+                  <div class="mx-gridwrap" style="min-width:330px">
                     <div style="display:grid;grid-template-columns:84px repeat(6,1fr);gap:4px;align-items:center;margin-bottom:5px;background:var(--gdk);border-radius:8px;padding:6px 6px">
                       <span style="font-size:10px;color:rgba(255,255,255,.7);font-weight:600">Colour</span>@for (s of sizes(); track s) { <span style="text-align:center;font-weight:800;color:#fff;font-size:11px">{{ s }}</span> }
                     </div>
@@ -82,7 +82,7 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
                       <div style="display:grid;grid-template-columns:84px repeat(6,1fr);gap:4px;align-items:center;margin-bottom:4px">
                         <button type="button" class="mx-lbl" [class.asz]="kctx()?.mode === 'all' && kctx()?.pid === p.id && kctx()?.colorId === c.id" (click)="allSizes(p, c)" [attr.aria-label]="'Fill all sizes of ' + c.name">
                           <span style="width:12px;height:12px;border-radius:50%;flex-shrink:0;border:1.5px solid rgba(0,0,0,.12)" [style.background]="c.hex"></span>
-                          <span style="min-width:0"><span style="display:block;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.code }}</span><span style="display:block;font-size:9px;color:var(--t3);white-space:nowrap">{{ c.name }}</span></span>
+                          <span style="min-width:0"><span style="display:block;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span><span style="display:block;font-size:9px;color:var(--t3);white-space:nowrap">{{ c.code }}</span></span>
                         </button>
                         @for (sz of sizes(); track sz) {
                           <button type="button" class="mx-cell" [class.stopped]="c.stock[sz] === 'STOPPED'" [class.has]="q(p.id, c.id, sz) > 0" [class.sel]="isSel(p.id, c.id, sz)" [class.asz]="isAsz(p.id, c.id)"
@@ -107,6 +107,11 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
           <div style="min-width:0"><div class="tiny" style="font-weight:700;text-transform:uppercase">{{ kLabel() }}</div><div style="font-size:11px;font-weight:800">{{ kCtxText() }}</div></div>
           <div class="row" style="gap:8px"><div style="font-size:23px;font-weight:800" [style.color]="kval() ? 'var(--t1)' : 'var(--t3)'">{{ kval() || '—' }}</div>
             <button type="button" class="pillbtn" style="padding:4px 9px" (click)="closeKpad()" aria-label="Close keypad">✕</button></div>
+        </div>
+        <div class="row" style="gap:6px;margin-bottom:6px">
+          <span class="tiny" style="font-weight:700">Quick:</span>
+          @for (n of [3, 6, 12, 24]; track n) { <button class="pillbtn" type="button" style="padding:5px 12px" (click)="quick(n)">{{ n }}</button> }
+          <button class="pillbtn" type="button" style="padding:5px 12px;margin-left:auto" (click)="quick(0)">Clear</button>
         </div>
         <div class="row" style="gap:6px;margin-bottom:6px"><button class="btns" type="button" style="flex:1;padding:6px" (click)="adj(-1)" aria-label="Decrease">−</button>
           <div style="flex:2;text-align:center;font-size:16px;font-weight:800">{{ +kval() || 0 }}</div><button class="btns" type="button" style="flex:1;padding:6px" (click)="adj(1)" aria-label="Increase">+</button></div>
@@ -240,11 +245,14 @@ export class OrderMatrixPage {
   }
 
   /* ── keypad ── */
+  /** True until the first digit after opening a cell: that digit replaces the old quantity instead of appending to it. */
+  private fresh = true;
   pick(p: MatrixProduct, c: ProductColor, sz: string) {
     if (c.stock[sz] === 'STOPPED') return;
     this.kctx.set({ pid: p.id, colorId: c.id, size: sz, mode: 'single' });
     const v = this.q(p.id, c.id, sz);
     this.kval.set(v ? String(v) : '');
+    this.fresh = true;
   }
   allSizes(p: MatrixProduct, c: ProductColor) {
     const k = this.kctx();
@@ -254,6 +262,7 @@ export class OrderMatrixPage {
     this.kctx.set({ pid: p.id, colorId: c.id, size: first, mode: 'all' });
     const v = this.q(p.id, c.id, first);
     this.kval.set(v ? String(v) : '');
+    this.fresh = true;
   }
   kLabel() {
     const k = this.kctx()!, p = this.products().find(x => x.id === k.pid)!, sl = this.store.sleeveOf(k.pid) === 'HALF' ? 'Half Sleeve' : 'Full Sleeve';
@@ -262,7 +271,7 @@ export class OrderMatrixPage {
   kCtxText() {
     const k = this.kctx()!, p = this.products().find(x => x.id === k.pid)!;
     const price = this.store.sleeveOf(k.pid) === 'HALF' ? p.halfRate : p.factoryRate;
-    return `₹${price}/pc — ${k.mode === 'all' ? 'qty fills all sizes' : 'single cell'}`;
+    return `₹${price}/pc — ${k.mode === 'all' ? 'qty fills all sizes' : 'single cell'} · typing replaces the quantity`;
   }
   private commit() {
     const k = this.kctx(); if (!k) return;
@@ -273,9 +282,17 @@ export class OrderMatrixPage {
       const n = this.nudge(p); if (n?.win) this.ui.toast(`🎁 ${p.name} scheme unlocked: ${p.scheme.text}`);
     }
   }
-  key(n: number) { if (this.kval().length >= 4) return; this.kval.set((this.kval() === '0' ? '' : this.kval()) + n); this.commit(); }
-  del() { this.kval.set(this.kval().slice(0, -1)); this.commit(); }
-  adj(d: number) { const v = Math.max(0, Math.min(9999, (+this.kval() || 0) + d)); this.kval.set(v ? String(v) : ''); this.commit(); }
+  key(n: number) {
+    const base = this.fresh || this.kval() === '0' ? '' : this.kval();
+    this.fresh = false;
+    if (base.length >= 3) { this.ui.toast('Maximum 999 pcs per cell'); return; }
+    this.kval.set(base + n);
+    this.commit();
+  }
+  del() { this.fresh = false; this.kval.set(this.kval().slice(0, -1)); this.commit(); }
+  adj(d: number) { this.fresh = false; const v = Math.max(0, Math.min(999, (+this.kval() || 0) + d)); this.kval.set(v ? String(v) : ''); this.commit(); }
+  /** Quick quantities for common pack sizes. */
+  quick(n: number) { this.fresh = false; this.kval.set(String(n)); this.commit(); }
   ok() {
     const k = this.kctx(); if (!k) return;
     if (k.mode === 'all') { this.closeKpad(); return; }

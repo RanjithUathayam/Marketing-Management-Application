@@ -27,6 +27,16 @@ export function uploader(folder) {
   });
 }
 
+/** Multer instance keeping images in memory (biometric images are checked before anything is written to disk). */
+export function memoryImageUploader(maxFiles = 2) {
+  return multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: env.maxUploadMb * 1024 * 1024, files: maxFiles },
+    fileFilter: (_req, file, cb) =>
+      ['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype) ? cb(null, true) : cb(badRequest('Only JPG, PNG or WEBP images are allowed')),
+  });
+}
+
 /** Public URL path for a stored file. */
 export const publicPath = (folder, file) => (file ? `/uploads/${folder}/${path.basename(file.path ?? file)}` : null);
 

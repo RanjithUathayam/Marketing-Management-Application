@@ -2,14 +2,17 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { targetUserId } from '../middleware/auth.js';
-import { uploader, publicPath, removeUploaded } from '../middleware/upload.js';
-import { badRequest, conflict } from '../utils/http.js';
+import { memoryImageUploader } from '../middleware/upload.js';
+import { HttpError, badRequest, conflict } from '../utils/http.js';
+import { env } from '../config/env.js';
+import { logger } from '../utils/logger.js';
+import { faceEngine, evaluateVerification, storeSecureJpeg } from '../services/face.js';
 import { localDate, localYearMonth, isLate, utcRange, monthRange, daysInMonth, weekday, isoDate, toIso } from '../utils/dates.js';
 import { pathMeters } from '../domain/rules.js';
 import { notify, managerOf } from '../services/notify.js';
 
 export const router = Router();
-const selfie = uploader('selfies');
+const selfieFrames = memoryImageUploader(2);
 
 const TRAVEL = ['OWN_VEHICLE', 'BUS', 'CAB', 'WALK'];
 const optNum = z.preprocess(v => (v === '' || v == null ? undefined : Number(v)), z.number().finite().optional());
@@ -28,7 +31,7 @@ async function todayState(userId) {
     dayStarted: !!d,
     dayEnded: !!d?.DayEndedAt,
     day: d ? { travelMode: d.TravelMode, odoStart: d.OdoStart, odoEnd: d.OdoEnd, isLate: !!d.IsLate,
-               startedAt: d.DayStartedAt, endedAt: d.DayEndedAt, selfie: d.SelfiePath } : null,
+               startedAt: d.DayStartedAt, endedAt: d.DayEndedAt, faceVerified: !!d.FaceVerificationId } : null,
     openSession: sessions.find(s => !s.CheckOutAt) ?? null,
     sessions,
   };
@@ -36,33 +39,98 @@ async function todayState(userId) {
 
 router.get('/today', async (req, res) => res.json(await todayState(req.user.id)));
 
-/* POST /attendance/start-day  multipart: selfie, travelMode, odoStart?, lat?, lng? */
-router.post('/start-day', selfie.single('selfie'), async (req, res) => {
+/* ── Selfie attendance punch with face verification ─────────────────────────────────────
+   1. POST /attendance/face/challenge → one-time challenge (head-turn direction) for the signed-in employee
+   2. POST /attendance/face/verify    → multipart challengeId + front + turned camera frames, compared on this
+                                         server with the employee's registered profile photo
+   3. POST /attendance/start-day      → consumes a PASSED verification; there is no other way to start the day */
+
+const profileMissing = () => new HttpError(409,
+  'Your profile photo is not registered. Ask your administrator to add it in the Employee Master before marking attendance.',
+  { code: 'PROFILE_PHOTO_MISSING' });
+
+router.post('/face/challenge', async (req, res) => {
+  const [[started], [user], [recent]] = await db.queryMulti(
+    `SELECT COUNT(*) AS n FROM dbo.AttendanceDays WHERE UserId = @u AND WorkDate = @d;
+     SELECT CASE WHEN FaceDescriptor IS NULL THEN 0 ELSE 1 END AS hasFace FROM dbo.Users WHERE UserId = @u AND IsActive = 1;
+     SELECT COUNT(*) AS n FROM dbo.FaceVerifications WHERE UserId = @u AND IssuedAt >= DATEADD(MINUTE, -15, SYSUTCDATETIME());`,
+    { u: req.user.id, d: localDate() });
+  if (started?.n) throw conflict('Your day has already been started');
+  if (!user?.hasFace) throw profileMissing();
+  if (recent?.n >= env.faceMaxAttemptsPer15Min) throw new HttpError(429, 'Too many verification attempts. Please wait 15 minutes and try again.');
+  const direction = Math.random() < 0.5 ? 'LEFT' : 'RIGHT';
+  const r = await db.one(
+    `UPDATE dbo.FaceVerifications SET Status = 'EXPIRED' WHERE UserId = @u AND Status = 'ISSUED';
+     INSERT dbo.FaceVerifications (UserId, TurnDirection, ExpiresAt) OUTPUT inserted.FaceVerificationId AS id
+     VALUES (@u, @dir, DATEADD(SECOND, @ttl, SYSUTCDATETIME()));`,
+    { u: req.user.id, dir: direction, ttl: env.faceChallengeSeconds });
+  res.status(201).json({ challengeId: r.id, direction, expiresInSeconds: env.faceChallengeSeconds });
+});
+
+router.post('/face/verify', selfieFrames.fields([{ name: 'front', maxCount: 1 }, { name: 'turned', maxCount: 1 }]), async (req, res) => {
+  const { challengeId } = z.object({ challengeId: z.coerce.number().int().positive() }).parse(req.body ?? {});
+  const front = req.files?.front?.[0], turned = req.files?.turned?.[0];
+  if (!front || !turned) throw badRequest('Capture your selfie with the camera');
+  // Claim atomically: a challenge is submitted once, by its owner, before it expires (anti-replay).
+  const claimed = await db.one(
+    `UPDATE dbo.FaceVerifications SET Status = 'PROCESSING', ClientIp = @ip, UserAgent = @ua OUTPUT inserted.TurnDirection AS direction
+      WHERE FaceVerificationId = @id AND UserId = @u AND Status = 'ISSUED' AND ExpiresAt > SYSUTCDATETIME()`,
+    { id: challengeId, u: req.user.id, ip: (req.ip ?? '').slice(0, 45), ua: String(req.headers['user-agent'] ?? '').slice(0, 300) });
+  if (!claimed) throw new HttpError(400, 'This capture has expired — please retake your selfie', { code: 'CHALLENGE_INVALID' });
+
+  let result, selfiePath = null, photoAt = null;
   try {
-    const b = z.object({ travelMode: z.enum(TRAVEL), odoStart: optNum, lat: optNum, lng: optNum }).parse(req.body);
-    if (!req.file) throw badRequest('Capture your attendance photo');
-    if (b.travelMode === 'OWN_VEHICLE' && !(b.odoStart >= 0)) throw badRequest('Enter the starting odometer reading');
-    const now = new Date(), today = localDate(now);
-    await db.transaction(async tx => {
-      const exists = await db.one('SELECT 1 AS x FROM dbo.AttendanceDays WHERE UserId = @u AND WorkDate = @d', { u: req.user.id, d: today }, tx);
-      if (exists) throw conflict('Your day has already been started');
-      await db.query(
-        `INSERT dbo.AttendanceDays (UserId, WorkDate, SelfiePath, TravelMode, OdoStart, StartLat, StartLng, IsLate, DayStartedAt)
-         VALUES (@u, @d, @selfie, @mode, @odo, @lat, @lng, @late, @now);
-         IF NOT EXISTS (SELECT 1 FROM dbo.AttendanceSessions WHERE UserId = @u AND CheckOutAt IS NULL)
-           INSERT dbo.AttendanceSessions (UserId, CheckInAt) VALUES (@u, @now);`,
-        { u: req.user.id, d: today, selfie: publicPath('selfies', req.file), mode: b.travelMode,
-          odo: b.travelMode === 'OWN_VEHICLE' ? Math.round(b.odoStart) : null, lat: b.lat ?? null, lng: b.lng ?? null,
-          late: isLate(now), now }, tx);
-      if (b.lat != null && b.lng != null)
-        await db.query(`INSERT dbo.GpsPoints (UserId, CapturedAt, Latitude, Longitude, Label) VALUES (@u, @now, @lat, @lng, N'Day started')`,
-          { u: req.user.id, now, lat: b.lat, lng: b.lng }, tx);
-    });
-    res.status(201).json(await todayState(req.user.id));
+    const user = await db.one('SELECT FaceDescriptor, ProfilePhotoUpdatedAt FROM dbo.Users WHERE UserId = @u AND IsActive = 1', { u: req.user.id });
+    if (!user?.FaceDescriptor) throw profileMissing();
+    photoAt = user.ProfilePhotoUpdatedAt;
+    const f = await faceEngine.analyze(front.buffer), t = await faceEngine.analyze(turned.buffer);
+    result = evaluateVerification({ profile: JSON.parse(user.FaceDescriptor), front: f, turned: t, direction: claimed.direction });
+    // Kept for audit: the accepted selfie, and selfies that showed a different person.
+    if (result.status === 'PASSED' || result.status === 'MISMATCH') selfiePath = await storeSecureJpeg('attendance-selfies', front.buffer);
   } catch (e) {
-    removeUploaded(req.file ? [req.file] : []);
+    await db.query(`UPDATE dbo.FaceVerifications SET Status = 'EXPIRED' WHERE FaceVerificationId = @id`, { id: challengeId });
     throw e;
   }
+  await db.query(
+    `UPDATE dbo.FaceVerifications SET Status = @status, MatchDistance = @dist, SelfiePath = @selfie, ProfilePhotoAt = @photoAt,
+            VerifiedAt = SYSUTCDATETIME() WHERE FaceVerificationId = @id`,
+    { id: challengeId, status: result.status, dist: result.distance == null ? null : Math.round(result.distance * 1e4) / 1e4,
+      selfie: selfiePath, photoAt });
+  logger.info({ userId: req.user.id, verificationId: challengeId, status: result.status }, 'face verification');
+  res.json({ verificationId: challengeId, status: result.status, verified: result.status === 'PASSED', message: result.message });
+});
+
+/* POST /attendance/start-day { verificationId, travelMode, odoStart?, lat?, lng? } */
+router.post('/start-day', async (req, res) => {
+  const b = z.object({
+    verificationId: z.coerce.number({ error: 'Verify your face before starting the day' }).int().positive('Verify your face before starting the day'),
+    travelMode: z.enum(TRAVEL), odoStart: optNum, lat: optNum, lng: optNum,
+  }).parse(req.body ?? {});
+  if (b.travelMode === 'OWN_VEHICLE' && !(b.odoStart >= 0)) throw badRequest('Enter the starting odometer reading');
+  const now = new Date(), today = localDate(now);
+  await db.transaction(async tx => {
+    const exists = await db.one('SELECT 1 AS x FROM dbo.AttendanceDays WHERE UserId = @u AND WorkDate = @d', { u: req.user.id, d: today }, tx);
+    if (exists) throw conflict('Your day has already been started');
+    // Single use, owned by the caller, recent, and made against the employee's current profile photo.
+    const fv = await db.one(
+      `UPDATE fv SET Status = 'CONSUMED', ConsumedAt = @now OUTPUT inserted.SelfiePath
+         FROM dbo.FaceVerifications fv JOIN dbo.Users u ON u.UserId = fv.UserId AND u.ProfilePhotoUpdatedAt = fv.ProfilePhotoAt
+        WHERE fv.FaceVerificationId = @v AND fv.UserId = @u AND fv.Status = 'PASSED' AND fv.VerifiedAt >= DATEADD(SECOND, -@valid, @now)`,
+      { v: b.verificationId, u: req.user.id, now, valid: env.faceVerificationValidSeconds }, tx);
+    if (!fv) throw new HttpError(400, 'Face verification is missing or has expired — capture your selfie again', { code: 'FACE_NOT_VERIFIED' });
+    await db.query(
+      `INSERT dbo.AttendanceDays (UserId, WorkDate, SelfiePath, FaceVerificationId, TravelMode, OdoStart, StartLat, StartLng, IsLate, DayStartedAt)
+       VALUES (@u, @d, @selfie, @fv, @mode, @odo, @lat, @lng, @late, @now);
+       IF NOT EXISTS (SELECT 1 FROM dbo.AttendanceSessions WHERE UserId = @u AND CheckOutAt IS NULL)
+         INSERT dbo.AttendanceSessions (UserId, CheckInAt) VALUES (@u, @now);`,
+      { u: req.user.id, d: today, selfie: fv.SelfiePath, fv: b.verificationId, mode: b.travelMode,
+        odo: b.travelMode === 'OWN_VEHICLE' ? Math.round(b.odoStart) : null, lat: b.lat ?? null, lng: b.lng ?? null,
+        late: isLate(now), now }, tx);
+    if (b.lat != null && b.lng != null)
+      await db.query(`INSERT dbo.GpsPoints (UserId, CapturedAt, Latitude, Longitude, Label) VALUES (@u, @now, @lat, @lng, N'Day started')`,
+        { u: req.user.id, now, lat: b.lat, lng: b.lng }, tx);
+  });
+  res.status(201).json(await todayState(req.user.id));
 });
 
 router.post('/check-in', async (req, res) => {

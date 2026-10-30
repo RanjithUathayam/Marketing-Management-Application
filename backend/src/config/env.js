@@ -43,6 +43,17 @@ export const env = {
   geofenceMeters: num('GEOFENCE_METERS', 50),
   uploadDir: path.resolve(str('UPLOAD_DIR', 'uploads')),
   maxUploadMb: num('MAX_UPLOAD_MB', 5),
+
+  // Biometric images (employee profile photos, attendance selfies) — never served statically.
+  secureUploadDir: path.resolve(str('SECURE_UPLOAD_DIR', 'secure-uploads')),
+  // Max face-descriptor distance accepted as the same person (face-api: 0.6 is lenient, 0.45 strict).
+  faceMatchThreshold: num('FACE_MATCH_THRESHOLD', 0.5),
+  // Minimum change in nose position (fraction of eye span) for the head-turn liveness challenge.
+  faceLivenessMinTurn: num('FACE_LIVENESS_MIN_TURN', 0.08),
+  faceChallengeSeconds: num('FACE_CHALLENGE_SECONDS', 180),
+  // A passed verification must be used to start the day within this window.
+  faceVerificationValidSeconds: num('FACE_VERIFICATION_VALID_SECONDS', 600),
+  faceMaxAttemptsPer15Min: num('FACE_MAX_ATTEMPTS_PER_15_MIN', 10),
 };
 
 export function assertConfig() {

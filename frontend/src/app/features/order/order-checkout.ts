@@ -17,7 +17,7 @@ import { OrderStore } from './order.store';
   template: `
     <app-bar title="Order Summary" [sub]="store.outlet()?.name" fallback="/order/matrix" />
     <div class="loc-bar green"><span>📍</span><span class="loc-txt">{{ store.outlet()?.name }}, {{ store.outlet()?.area }}</span><span class="loc-dot"></span></div>
-    <div class="body pad">
+    <div class="body pad narrow">
       <app-state [loading]="!q() && !err()" [error]="err()" (retry)="load()">
         @if (q(); as q) {
           @if (q.credit.exceeds) {
@@ -84,7 +84,7 @@ export class OrderSummaryPage {
   host: { class: 'sc' },
   template: `
     <app-bar title="Transport Details" [sub]="store.outlet()?.name" fallback="/order/summary" />
-    <div class="body pad">
+    <div class="body pad narrow">
       <div class="card p">
         <div style="font-size:13px;font-weight:800;margin-bottom:12px">🚚 Transport Info</div>
         @if (last(); as l) {
@@ -152,6 +152,7 @@ export class OrderTransportPage {
   template: `
     <app-bar title="Order Placed" [back]="false" />
     <div class="body" style="display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;padding:24px">
+      <div class="auth-wrap">
       <app-state [loading]="!o()">
         @if (o(); as o) {
           <div style="width:92px;height:92px;border-radius:50%;background:linear-gradient(135deg,#0d6e50,#10a070);color:#fff;display:flex;align-items:center;justify-content:center;font-size:44px;margin:0 auto 16px;box-shadow:0 10px 30px rgba(13,110,80,.35)">✓</div>
@@ -171,6 +172,7 @@ export class OrderTransportPage {
           <button class="btn primary mt8" type="button" (click)="done('/home')">← Back to Dashboard</button>
         }
       </app-state>
+      </div>
     </div>`,
 })
 export class OrderSuccessPage {
@@ -187,15 +189,16 @@ export class OrderSuccessPage {
         this.o.set(o);
         const started = Number(sessionStorage.getItem('mma.orderStart') || 0);
         if (started) { const s = Math.round((Date.now() - started) / 1000); this.elapsed.set(`${Math.floor(s / 60)} min ${s % 60} sec`); }
+        this.mobile = this.store.outlet()?.mobile ?? '';
         this.store.reset();
         sessionStorage.removeItem('mma.orderStart');
       } catch { this.router.navigateByUrl('/orders'); }
     });
   }
+  private mobile = '';
   waLink(o: Order) {
-    const outlet = this.store.outlet();
     const text = `Order ${o.orderNo} confirmed for ${o.outletName}: ${o.totalPieces} pcs, total ${money(o.totalAmount)}. Delivery: ${o.transport.deliveryDate}. Thank you!`;
-    return `https://wa.me/${outlet?.mobile ? '91' + outlet.mobile : ''}?text=${encodeURIComponent(text)}`;
+    return `https://wa.me/${this.mobile ? '91' + this.mobile : ''}?text=${encodeURIComponent(text)}`;
   }
   done(url: string) { this.router.navigateByUrl(url); }
 }

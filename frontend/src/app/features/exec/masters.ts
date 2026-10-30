@@ -5,20 +5,21 @@ import { Api, errorMessage } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { Ui } from '../../core/ui.service';
 import { AttendanceToday, MySamplePads, Notification, Outlet, Paged, Product } from '../../core/models';
-import { DtPipe, InrPipe, PERF, STOCK_HEX, TimePipe, initials } from '../../core/format';
+import { DtPipe, InrPipe, PERF, STOCK_HEX, TimePipe } from '../../core/format';
 import { AppBar, Sheet, StateView } from '../../shared/ui.components';
+import { Avatar } from '../../shared/avatar';
 import { OrderStore } from '../order/order.store';
 
 /* ── Profile ── */
 @Component({
   selector: 'app-profile',
-  imports: [FormsModule, RouterLink, AppBar, Sheet, InrPipe, TimePipe],
+  imports: [FormsModule, RouterLink, AppBar, Sheet, InrPipe, TimePipe, Avatar],
   host: { class: 'sc' },
   template: `
     <app-bar title="Profile" [back]="false" />
-    <div class="body pad">
+    <div class="body pad narrow">
       <div class="card p center">
-        <div class="av" style="width:70px;height:70px;font-size:24px;margin:0 auto 10px;background:linear-gradient(135deg,#0d6e50,#10a070)">{{ ini() }}</div>
+        <app-avatar style="width:70px;height:70px;font-size:24px;margin:0 auto 10px;background:linear-gradient(135deg,#0d6e50,#10a070)" />
         <b style="font-size:17px">{{ u()?.name }}</b><div class="muted">{{ u()?.designation || u()?.role }} · {{ u()?.empCode }}</div>
         @if (att(); as a) {
           @if (a.openSession) { <div class="chip c-green mt8"><span class="d"></span>On duty · checked in {{ a.openSession.CheckInAt | time }}</div> }
@@ -61,7 +62,6 @@ export class ProfilePage {
   busy = signal(false);
   summary = signal<{ visits: number; sales: number; gpsKm: number } | null>(null);
   odoEnd: number | null = null;
-  ini = computed(() => initials(this.u()?.name ?? ''));
   odoKm = () => (this.odoEnd && this.att()?.day?.odoStart != null ? Number(this.odoEnd) - this.att()!.day!.odoStart! : null);
   details = computed(() => {
     const u = this.u();
@@ -122,7 +122,7 @@ export class ProfilePage {
       @if (unread()) { <button class="bar-preview" type="button" (click)="readAll()">Mark all read</button> }
     </app-bar>
     <div class="body pad">
-      <app-state [loading]="!items() && !err()" [error]="err()" (retry)="load()">
+      <app-state [loading]="!items() && !err()" [error]="err()" (retry)="load()"><div class="card-grid cols-2">
         @for (n of items() ?? []; track n.id) {
           <button type="button" class="card p" style="margin-bottom:9px;display:flex;gap:11px;align-items:flex-start;width:100%;text-align:left;cursor:pointer"
                   [style.background]="n.isRead ? '' : '#f8fffc'" [style.border-color]="n.isRead ? '' : 'var(--g3)'" (click)="open(n)">
@@ -131,7 +131,7 @@ export class ProfilePage {
             @if (!n.isRead) { <span style="width:8px;height:8px;border-radius:50%;background:var(--r);flex-shrink:0;margin-top:5px" aria-label="Unread"></span> }
           </button>
         } @empty { <div class="empty">You're all caught up.</div> }
-      </app-state>
+      </div></app-state>
     </div>`,
 })
 export class NotificationsPage {
@@ -162,7 +162,7 @@ export class NotificationsPage {
     <app-bar title="Customers / Retailers" [sub]="total() + ' outlets'" />
     <div class="srch"><div class="sbox"><span>🔍</span><input [(ngModel)]="q" (ngModelChange)="debounced()" placeholder="Search retailers, owner, mobile…" aria-label="Search retailers"></div></div>
     <div class="body pad">
-      <app-state [loading]="loading()" [error]="err()" (retry)="load()">
+      <app-state [loading]="loading()" [error]="err()" (retry)="load()"><div class="card-grid">
         @for (o of list(); track o.id) {
           <button type="button" class="card p" style="margin-bottom:9px;width:100%;text-align:left;cursor:pointer" (click)="cur.set(o)">
             <div class="between"><div><b style="font-size:13px">{{ o.name }}</b> <span class="stars">{{ '★'.repeat(o.grade) }}</span><div class="tiny" style="margin-top:2px">{{ o.owner }} · {{ o.mobile }}</div></div><div class="lr-go">›</div></div>
@@ -170,7 +170,8 @@ export class NotificationsPage {
               <span class="chip xs" [style.background]="perf(o).hex + '22'" [style.color]="perf(o).hex">{{ perf(o).label }}</span></div>
           </button>
         } @empty { <div class="empty">No retailers found.</div> }
-        @if (total() > list().length) { <button class="btn ghost" type="button" (click)="more()">Load more</button> }
+        </div>
+        @if (total() > list().length) { <button class="btn ghost mt12" type="button" (click)="more()">Load more</button> }
       </app-state>
     </div>
     <app-sheet [open]="!!cur()" (openChange)="!$event && cur.set(null)" [heading]="cur()?.name ?? ''" [subheading]="(cur()?.owner ?? '') + ' · ' + (cur()?.mobile ?? '')">
@@ -227,7 +228,7 @@ export class CustomersPage {
     <app-bar title="Products / SKU" sub="Master catalogue" />
     <div class="srch"><div class="sbox"><span>🔍</span><input [(ngModel)]="q" (ngModelChange)="debounced()" placeholder="Search products, colour, QR…" aria-label="Search products"></div></div>
     <div class="body pad">
-      <app-state [loading]="loading()" [error]="err()" (retry)="load()">
+      <app-state [loading]="loading()" [error]="err()" (retry)="load()"><div class="card-grid">
         @for (p of list(); track p.id) {
           <div class="card p" style="margin-bottom:9px;display:flex;gap:11px;align-items:center">
             <div class="qaic" style="width:44px;height:44px;background:var(--g2)">{{ p.icon }}</div>
@@ -238,7 +239,7 @@ export class CustomersPage {
                 <span style="font-size:9px;font-weight:800" [style.color]="hex(p.stockBand.tone)">● {{ p.stockBand.label }}</span></div></div>
           </div>
         } @empty { <div class="empty">No products match.</div> }
-      </app-state>
+      </div></app-state>
     </div>`,
 })
 export class ProductsPage {

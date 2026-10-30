@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api.service';
 import { Ui } from '../../core/ui.service';
 import { TeamMember, TrackingToday } from '../../core/models';
-import { InrPipe, TimePipe, initials, todayIso } from '../../core/format';
+import { InrPipe, TimePipe, compactInr, initials, todayIso } from '../../core/format';
 import { AppBar, StateView } from '../../shared/ui.components';
 import { RouteMap } from '../../shared/route-map';
 import { TeamMemberSheet } from './team-member-sheet';
@@ -126,7 +126,7 @@ interface TeamSummary { beatChanges: { current: number; previous: number; change
         <app-state [loading]="!trend()">
           @if (trend(); as t) {
             <div class="between mb12"><b style="font-size:13px">{{ t.total | inr }}</b>@if (t.changePct !== null) { <span class="chip xs" [class.c-green]="t.changePct >= 0" [class.c-red]="t.changePct < 0"><span class="d"></span>{{ t.changePct >= 0 ? '▲' : '▼' }} {{ abs(t.changePct) }}% vs previous 6 days</span> }</div>
-            <div class="bars">@for (d of t.days; track d.date) { <div [title]="d.date + ': ₹' + d.amount"><i [style.height.%]="barH(d.amount)"></i><span class="tiny">{{ dow(d.date) }}</span></div> }</div>
+            <div class="bars">@for (d of t.days; track d.date) { <div [title]="d.date + ': ₹' + d.amount"><b class="bar-v">{{ compact(d.amount) }}</b><i [style.height.%]="barH(d.amount)"></i><span class="tiny">{{ dow(d.date) }}</span></div> }</div>
           }
         </app-state>
       </div>
@@ -158,6 +158,7 @@ export class ManagerReportsPage {
   to = this.today;
   type = 'team';
   abs = Math.abs;
+  compact = compactInr;
   barH = (a: number) => { const m = Math.max(...(this.trend()?.days.map(d => d.amount) ?? [1]), 1); return Math.max(2, (a / m) * 100); };
   dow = (iso: string) => 'SMTWTFS'[new Date(iso + 'T00:00:00').getDay()];
   constructor() {

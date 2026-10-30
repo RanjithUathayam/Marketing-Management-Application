@@ -3,17 +3,18 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
 import { ExecDashboard } from '../../core/models';
-import { DtPipe, InrPipe, initials } from '../../core/format';
+import { DtPipe, InrPipe } from '../../core/format';
 import { StateView, StatusPill } from '../../shared/ui.components';
 import { AttendanceWidget } from '../../shared/attendance-widget';
+import { Avatar } from '../../shared/avatar';
 
 @Component({
   selector: 'app-home',
-  imports: [RouterLink, InrPipe, DtPipe, StateView, StatusPill, AttendanceWidget],
+  imports: [RouterLink, InrPipe, DtPipe, StateView, StatusPill, AttendanceWidget, Avatar],
   host: { class: 'sc' },
   template: `
     <header class="bar grad" style="padding-bottom:16px">
-      <div class="av" style="background:rgba(255,255,255,.2)">{{ init() }}</div>
+      <app-avatar style="background:rgba(255,255,255,.2)" />
       <div class="btitle" style="margin-left:2px">Hi, {{ firstName() }} 👋<small>{{ auth.user()?.empCode }} · {{ auth.user()?.region }}</small></div>
       <app-attendance-widget />
       <button class="bico" type="button" routerLink="/notifications" aria-label="Notifications">🔔@if (d()?.unreadNotifications) {<span class="notif-dot"></span>}</button>
@@ -51,6 +52,7 @@ import { AttendanceWidget } from '../../shared/attendance-widget';
             <div class="kpi up"><div class="kico">📈</div><div class="kv">{{ d.target.pct }}%</div><div class="kl">Monthly Target</div><div class="ktrend">MTD achieved</div></div>
           </div>
 
+          <div class="dash-cols"><div>
           <div class="sec-title">Target vs Achievement</div>
           <button type="button" class="card p" style="width:100%;text-align:left;cursor:pointer" routerLink="/targets">
             <div class="between" style="margin-bottom:8px"><span class="muted">{{ d.target.achieved | inr }} of {{ d.target.monthly | inr }}</span><b style="color:var(--g)">{{ d.target.pct }}%</b></div>
@@ -64,7 +66,7 @@ import { AttendanceWidget } from '../../shared/attendance-widget';
               <button type="button" class="qa" (click)="router.navigateByUrl(q.go)"><div class="qaic" [style.background]="q.bg">{{ q.ic }}</div><div class="qal">{{ q.lbl }}</div></button>
             }
           </div></div>
-
+          </div><div>
           <div class="sec-title">Recent Orders</div>
           <div class="card">
             @for (o of d.recentOrders; track o.id) {
@@ -76,6 +78,7 @@ import { AttendanceWidget } from '../../shared/attendance-widget';
             } @empty { <div class="empty">No orders yet — start your beat to take one.</div> }
             <button type="button" class="lrow" style="justify-content:center;color:var(--g);font-weight:800;font-size:12px" routerLink="/orders">View all in Order Status →</button>
           </div>
+          </div></div>
         }
       </app-state>
     </div>`,
@@ -99,7 +102,6 @@ export class HomePage {
     { ic: '📡', bg: '#e0e7ff', lbl: 'Live Track', go: '/tracking' },
   ];
   firstName = () => this.auth.user()?.name.split(' ')[0] ?? '';
-  init = () => initials(this.auth.user()?.name ?? '');
   coverage = (d: ExecDashboard) => (d.todayBeat?.outlets ? Math.round((d.todayBeat.visited / d.todayBeat.outlets) * 100) : 0);
 
   constructor() { this.load(); }

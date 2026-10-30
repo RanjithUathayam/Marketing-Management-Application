@@ -5,15 +5,16 @@ import { AuthService } from '../../core/auth.service';
 import { Beat, ManagerDashboard, TeamMember } from '../../core/models';
 import { InrPipe, fmtD, initials } from '../../core/format';
 import { StateView, VisitBadge } from '../../shared/ui.components';
+import { Avatar } from '../../shared/avatar';
 import { TeamMemberSheet } from './team-member-sheet';
 
 @Component({
   selector: 'app-manager-home',
-  imports: [RouterLink, StateView, VisitBadge, InrPipe, TeamMemberSheet],
+  imports: [RouterLink, StateView, VisitBadge, InrPipe, TeamMemberSheet, Avatar],
   host: { class: 'sc' },
   template: `
     <header class="bar grad" style="padding-bottom:16px">
-      <div class="av" style="background:rgba(255,255,255,.2)">{{ ini() }}</div>
+      <app-avatar style="background:rgba(255,255,255,.2)" />
       <div class="btitle">{{ auth.user()?.name }}<small>{{ auth.user()?.designation }} · {{ auth.user()?.region }}</small></div>
       <button class="bico" type="button" routerLink="/notifications" aria-label="Notifications">🔔</button>
       <button class="bico" type="button" routerLink="/manager/approvals" aria-label="Approvals">📥@if (d()?.pendingApprovals) {<span class="notif-dot"></span>}</button>
@@ -30,6 +31,7 @@ import { TeamMemberSheet } from './team-member-sheet';
               <div class="ktrend" style="color:var(--amber)">{{ d.pendingApprovals ? 'Action needed' : 'All clear' }}</div></button>
           </div>
 
+          <div class="dash-cols"><div>
           <div class="sec-title">Beat Change Trend (this month)</div>
           <div class="card p">
             <div class="bars" style="height:80px">@for (b of d.beatChangeTrend; track b.userId) { <div [title]="b.name + ': ' + b.count"><i [class.warn]="b.unusual" [style.height.%]="bcH(b.count)"></i><span class="tiny">{{ b.name.split(' ')[0] }}</span></div> }</div>
@@ -60,6 +62,7 @@ import { TeamMemberSheet } from './team-member-sheet';
             <button type="button" class="lrow" style="justify-content:center;color:var(--ix);font-weight:800;font-size:12px" routerLink="/manager/sample-pads">Open Sample Pad object · {{ padAck() }}/{{ padIssued() }} acknowledged →</button>
           </div>
 
+          </div><div>
           <div class="sec-title">Beat Visit Status · {{ monthName }}</div>
           @if (nvBeats().length) { <div class="pc-alert nvb">🚫 <span><b>{{ nvBeats().length }} beat{{ nvBeats().length > 1 ? 's' : '' }} not visited this month (NV)</b> — {{ nvNames() }}</span></div> }
           <div class="card">
@@ -73,6 +76,7 @@ import { TeamMemberSheet } from './team-member-sheet';
             }
           </div>
           <div class="vlegend"><span><em class="vind nv">NV</em>Not visited</span><span><em class="vind v1">MV</em>1</span><span><em class="vind v2">V2</em>2</span><span><em class="vind v3">V3</em>3</span><span><em class="vind v4">V4+</em>4+</span></div>
+          </div></div>
         }
       </app-state>
     </div>
@@ -90,7 +94,6 @@ export class ManagerHomePage {
   monthName = new Date().toLocaleString('en-IN', { month: 'long' });
   rank: Record<string, [string, string]> = { top: ['c-green', 'Top'], avg: ['c-blue', 'Avg'], low: ['c-red', 'Low'] };
   grp: Record<string, string> = { nv: '🚫 Not Visited', must: '⚑ Must Visit', ok: '✓ On Track' };
-  ini = computed(() => initials(this.auth.user()?.name ?? ''));
   ini2 = initials;
   unusual = computed(() => this.d()?.beatChangeTrend.filter(b => b.unusual) ?? []);
   nvBeats = computed(() => this.d()?.beats.filter(b => b.group === 'nv') ?? []);

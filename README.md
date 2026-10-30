@@ -67,7 +67,9 @@ New schema changes go in a new numbered file (`004_….sql`); applied files are 
 | `SMS_GATEWAY_URL`, `SMS_GATEWAY_TOKEN` | Gateway that delivers the OTP over SMS + WhatsApp (OTPs are logged when blank) |
 | `APP_TIMEZONE`, `LATE_AFTER` | Business time zone and late check-in cut-off (default Asia/Kolkata, 10:00) |
 | `TAX_RATE`, `GEOFENCE_METERS` | Order tax rate and outlet geofence radius |
-| `UPLOAD_DIR`, `MAX_UPLOAD_MB` | Where selfies, shop/KYC photos, bills and signatures are stored |
+| `UPLOAD_DIR`, `MAX_UPLOAD_MB` | Where shop/KYC photos, bills and signatures are stored (served publicly under random names) |
+| `SECURE_UPLOAD_DIR` | Employee profile photos and attendance selfies (biometric) — never served statically; back it up and restrict OS access |
+| `FACE_MATCH_THRESHOLD`, `FACE_LIVENESS_MIN_TURN`, `FACE_CHALLENGE_SECONDS`, `FACE_VERIFICATION_VALID_SECONDS`, `FACE_MAX_ATTEMPTS_PER_15_MIN` | Selfie attendance face verification (see `.env.example`) |
 
 The frontend calls the API at `/api` (same origin). In development `frontend/proxy.conf.json` forwards `/api` and
 `/uploads` to `http://localhost:3000`; change `src/environments/environment.prod.ts` if the API is hosted elsewhere.
@@ -90,7 +92,14 @@ cd frontend && npm install && npm start   # http://localhost:4200
 | Manager | 9880100001 | Priya K. (Area Sales Manager) |
 | Admin | 9000000001 | System Admin |
 
-Camera features (selfie, QR scanning) need HTTPS or `localhost`. Non-production builds also show a
+Camera features (selfie, QR scanning) need HTTPS or `localhost`.
+
+**Selfie attendance:** an admin uploads each employee's profile photo in *Users & Beats* (Employee Master). On *Start Your Day*
+the employee captures a live selfie with the front camera (no gallery/file option): one frame facing the camera, one with the
+head turned to a server-chosen side. The API compares it with the profile photo on this server (face-api.js models,
+TensorFlow WASM — no third-party service) and only a passed, single-use verification can start the day. The head-turn check
+defeats a still printed photo; it is not certified liveness and will not stop a well-made video replay.
+ Non-production builds also show a
 "Simulate scan (demo)" button in the QR scanner; production builds do not.
 
 ## 5. Roles and permissions

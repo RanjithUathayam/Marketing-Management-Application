@@ -15,7 +15,7 @@ import { AppBar, Sheet, StateView } from '../../shared/ui.components';
   template: `
     <app-bar title="Market Survey" [sub]="outlet()?.name" fallback="/outlets" />
     <div class="body pad">
-      <app-state [loading]="!sections().length && !err()" [error]="err()" (retry)="load()">
+      <app-state [loading]="!sections().length && !err()" [error]="err()" (retry)="load()"><div class="card-grid cols-2">
         @for (s of sections(); track s.code) {
           <div class="card p" style="margin-bottom:9px">
             <label [for]="'sv-' + s.code" style="font-size:13px;font-weight:800">{{ s.title }}</label>
@@ -23,7 +23,7 @@ import { AppBar, Sheet, StateView } from '../../shared/ui.components';
             <div class="fld" style="margin:0"><textarea [id]="'sv-' + s.code" [(ngModel)]="answers[s.code]" maxlength="2000" placeholder="Record observation…"></textarea></div>
           </div>
         }
-      </app-state>
+      </div></app-state>
     </div>
     <div class="bbar"><button class="btnp" type="button" [disabled]="busy()" (click)="submit()">Submit Survey →</button></div>`,
 })
@@ -66,7 +66,7 @@ interface PaySummary { totalDue: number; collected: number; balance: number; his
   host: { class: 'sc' },
   template: `
     <app-bar title="Payment Collection" [sub]="outlet()?.name" fallback="/outlets" />
-    <div class="body pad">
+    <div class="body pad narrow">
       <app-state [loading]="!s() && !err()" [error]="err()" (retry)="load()">
         @if (s(); as s) {
           <div class="card p"><div class="metrics">
@@ -159,7 +159,7 @@ export class PaymentPage {
     <app-bar title="Expenses" [sub]="monthLabel" fallback="/reports">
       <button class="bico" type="button" (click)="openForm()" aria-label="Add expense">＋</button>
     </app-bar>
-    <div class="body pad">
+    <div class="body pad narrow">
       <app-state [loading]="!data() && !err()" [error]="err()" (retry)="load()">
         @if (data(); as d) {
           <div class="metrics mb12"><div><b>{{ d.total | inr }}</b><span>This Month</span></div><div><b style="color:var(--g)">{{ d.approved }}</b><span>Approved</span></div><div><b style="color:var(--amber)">{{ d.pending }}</b><span>Pending</span></div></div>

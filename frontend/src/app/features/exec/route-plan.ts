@@ -27,6 +27,7 @@ const STATUS: Record<PlanStatus, [string, string]> = {
     <div class="body pad">
       <app-state [loading]="loading()" [error]="err()" (retry)="load()">
         @if (store.plan(); as p) {
+          <div class="dash-cols"><div>
           <div class="card p">
             <b style="font-size:15px">Monthly Beat Plan</b><div class="muted">{{ auth.user()?.name }} · {{ auth.user()?.empCode }}</div>
             <div class="metrics mt12"><div><b>{{ p.stats.days }}</b><span>Working Days</span></div><div><b>{{ p.stats.beats }}</b><span>Beats Used</span></div><div><b>{{ p.stats.outlets }}</b><span>Outlets</span></div></div>
@@ -45,10 +46,12 @@ const STATUS: Record<PlanStatus, [string, string]> = {
               @else { <button class="btn primary" type="button" routerLink="/route/status">Approval Status →</button> }
             }
           </div>
+          </div><div>
           @if (store.beats().length) {
             <app-beat-list [beats]="store.beats()" heading="Assigned Beats" [actions]="true" (logVisit)="openLog($event)" (beatChange)="openChange($event)" />
           }
           <div class="tiny center mt12">Tap a beat to expand its details · ⇄ Beat change inside</div>
+          </div></div>
         }
       </app-state>
     </div>
@@ -146,8 +149,18 @@ export class RoutePlanPage {
             <div class="card p mb12" style="background:var(--g2);border-color:var(--g3)"><div class="between"><b style="color:var(--g);font-size:13px">{{ selected().size }} date(s) selected</b>
               <div class="row" style="gap:6px"><button class="pillbtn" type="button" (click)="clearDays()">Clear days</button><button class="pillbtn on" type="button" (click)="assignOpen.set(true)">Assign Beat →</button></div></div></div>
           }
-          <div class="card p"><app-plan-calendar [year]="p.year" [month]="p.month" [days]="draft()" [codes]="codes()" [selected]="selected()" [build]="p.status !== 'PENDING'" (toggle)="toggle($event)" /></div>
-          <div class="tiny center mt12" style="line-height:1.5">One beat per working day · Sundays are week-off.<br>Selected days already carrying a beat will be reassigned.</div>
+          @if (p.status !== 'PENDING') {
+            <div class="wrap mb12">
+              <button type="button" class="pillbtn" (click)="selectRemaining(false)">＋ Select remaining working days</button>
+              <button type="button" class="pillbtn" (click)="selectRemaining(true)">＋ Select unplanned days only</button>
+            </div>
+          }
+          <div class="card p"><app-plan-calendar [year]="p.year" [month]="p.month" [days]="draft()" [codes]="codes()" [selected]="selected()" [build]="p.status !== 'PENDING'" [lockPast]="true" (toggle)="toggle($event)" /></div>
+          @if (legend().length) {
+            <div class="card p mt12"><div class="tiny" style="font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Beat key</div>
+              <div class="wrap">@for (b of legend(); track b.id) { <span class="chip c-green" style="font-weight:700"><b>{{ b.code.replace('BT-', '') }}</b> {{ b.name }} · {{ b.days }}d</span> }</div></div>
+          }
+          <div class="tiny center mt12" style="line-height:1.5">One beat per working day · Sundays are week-off · past days are locked.<br>Selected days already carrying a beat will be reassigned.</div>
         }
       </app-state>
     </div>
@@ -190,6 +203,24 @@ export class RouteBuildPage {
     this.assignOpen.set(false);
     this.ui.toast('✅ Beat assigned — save to keep changes');
   }
+  /** Selects every working day from today to month end (optionally only days without a beat). */
+  selectRemaining(unplannedOnly: boolean) {
+    const p = this.store.plan(); if (!p) return;
+    const dim = new Date(p.year, p.month, 0).getDate(), today = todayIso(), planned = new Set(this.draft().map(d => d.day));
+    const s = new Set<number>();
+    for (let d = 1; d <= dim; d++) {
+      const iso = `${p.year}-${String(p.month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      if (iso < today || new Date(p.year, p.month - 1, d).getDay() === 0 || (unplannedOnly && planned.has(d))) continue;
+      s.add(d);
+    }
+    this.selected.set(s);
+    if (!s.size) this.ui.toast('No days left to select this month');
+  }
+  legend = computed(() => {
+    const counts = new Map<number, number>();
+    this.draft().forEach(d => counts.set(d.beatId, (counts.get(d.beatId) ?? 0) + 1));
+    return this.store.beats().filter(b => counts.has(b.id)).map(b => ({ id: b.id, code: b.code, name: b.name, days: counts.get(b.id)! }));
+  });
   clearDays() {
     const sel = this.selected();
     this.draft.set(this.draft().filter(d => !sel.has(d.day)));

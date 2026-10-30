@@ -37,8 +37,15 @@ const REASONS = ['Outlet Closed', 'Owner Absent', 'Competitor Demand', 'Stock Fu
     </div>
     <div class="body pad">
       @if (task()) { <div class="pc-good">👉 <span>Choose an outlet for <b>{{ task() === 'payment' ? 'payment collection' : 'market survey' }}</b>.</span></div> }
-      <app-state [loading]="loading()" [error]="err()" (retry)="load()">
-        @for (o of outlets(); track o.id) {
+      @if (outlets().length && !task()) {
+        <div class="card p mb12">
+          <div class="between"><b style="font-size:13px">{{ visitedCount() }} of {{ outlets().length }} visited today</b>
+            <button type="button" class="pillbtn" [class.on]="hideDone()" [attr.aria-pressed]="hideDone()" (click)="hideDone.set(!hideDone())">{{ hideDone() ? 'Show all' : 'Hide visited' }}</button></div>
+          <div class="prog mt8" role="progressbar" [attr.aria-valuenow]="visitedCount()" aria-valuemin="0" [attr.aria-valuemax]="outlets().length"><div [style.width.%]="(visitedCount() / outlets().length) * 100"></div></div>
+        </div>
+      }
+      <app-state [loading]="loading()" [error]="err()" (retry)="load()"><div class="card-grid">
+        @for (o of shown(); track o.id) {
           <button type="button" class="card p" style="margin-bottom:10px;cursor:pointer;width:100%;text-align:left" [style.border-left]="'4px solid ' + perf(o).hex" (click)="openOutlet(o)">
             <div class="between">
               <div style="min-width:0;flex:1">
@@ -52,8 +59,8 @@ const REASONS = ['Outlet Closed', 'Owner Absent', 'Competitor Demand', 'Stock Fu
               </div><div class="lr-go">›</div>
             </div>
           </button>
-        } @empty { <div class="empty">No outlets found.</div> }
-      </app-state>
+        } @empty { <div class="empty">{{ hideDone() && outlets().length ? '🎉 Every outlet here is visited today.' : 'No outlets found.' }}</div> }
+      </div></app-state>
     </div>
 
     <app-sheet [(open)]="sheetOpen" [heading]="cur()?.name ?? ''" [subheading]="(cur()?.owner ?? '') + ' · ' + (cur()?.mobile ?? '')">
@@ -98,6 +105,9 @@ export class OutletsPage {
   beats = signal<Beat[]>([]);
   beatSel = signal<number | null>(null);
   beat = computed(() => this.beats().find(b => b.id === this.beatSel()) ?? null);
+  hideDone = signal(false);
+  visitedCount = computed(() => this.outlets().filter(o => o.visitedToday).length);
+  shown = computed(() => (this.hideDone() ? this.outlets().filter(o => !o.visitedToday) : this.outlets()));
   loading = signal(true);
   err = signal<string | null>(null);
   search = '';

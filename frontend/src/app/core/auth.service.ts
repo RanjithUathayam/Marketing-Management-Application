@@ -1,4 +1,4 @@
-import { Injectable, computed, inject, signal } from '@angular/core';
+import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -20,10 +20,40 @@ export class AuthService {
   readonly role = computed<Role | null>(() => this.session()?.user.role ?? null);
   readonly isManager = computed(() => this.role() === 'MANAGER' || this.role() === 'ADMIN');
 
+  /** Object URL of the signed-in user's profile photo (null → show initials). */
+  readonly photoUrl = signal<string | null>(null);
+  private photoKey: string | null = null;
+
+  constructor() {
+    effect(() => {
+      const u = this.user();
+      const key = u?.hasPhoto ? `${u.id}@${u.photoUpdatedAt}` : null;
+      untracked(() => this.loadPhoto(key));
+    });
+  }
+
   get accessToken() { return this.session()?.accessToken ?? null; }
 
+  /** The photo is not a public file, so it is fetched with the user's token; refetched only when it changes. */
+  private async loadPhoto(key: string | null) {
+    if (key === this.photoKey) return;
+    this.photoKey = key;
+    const old = this.photoUrl();
+    if (old) URL.revokeObjectURL(old);
+    this.photoUrl.set(null);
+    if (!key) return;
+    try {
+      const b = await firstValueFrom(this.http.get(`${environment.apiUrl}/auth/me/photo`, { responseType: 'blob' }));
+      if (this.photoKey === key) this.photoUrl.set(URL.createObjectURL(b));
+    } catch { /* initials instead */ }
+  }
+
   private restore(): Session | null {
-    try { return JSON.parse(localStorage.getItem(KEY) || 'null'); } catch { return null; }
+    // Ignore anything that isn't a complete session (old format, tampered or half-written storage).
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY) || 'null');
+      return s?.accessToken && s?.refreshToken && s?.user?.id && s?.user?.role ? s : null;
+    } catch { return null; }
   }
   private store(s: Session | null) {
     this.session.set(s);
@@ -36,6 +66,7 @@ export class AuthService {
   }
   async verifyOtp(mobile: string, otp: string) {
     const r = await firstValueFrom(this.http.post<AuthResponse>(`${environment.apiUrl}/auth/otp/verify`, { mobile, otp }));
+    if (!r?.accessToken || !r?.user?.role) throw new Error('Sign-in failed — please try again');
     this.store(r);
     return r.user;
   }

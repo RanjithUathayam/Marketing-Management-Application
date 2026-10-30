@@ -1,4 +1,4 @@
-import { duration, fmtD, initials, money, stage, stageIdx, ORDER_STAGES } from './format';
+import { compactInr, duration, fmtD, initials, money, stage, stageIdx, ORDER_STAGES } from './format';
 
 describe('format helpers', () => {
   it('formats rupees in the Indian grouping', () => {
@@ -15,6 +15,9 @@ describe('format helpers', () => {
     expect(duration(3_725_000, false)).toBe('1h 02m');
   });
   it('builds initials', () => expect(initials('Ravi Kumar')).toBe('RK'));
+  it('formats compact chart amounts', () => {
+    expect([0, 950, 45_400, 1_25_000, 3_40_00_000].map(compactInr)).toEqual(['₹0', '₹950', '₹45k', '₹1.3L', '₹3.4Cr']);
+  });
   it('orders the six lifecycle stages', () => {
     expect(ORDER_STAGES.map(s => s.k)).toEqual(['RECEIVED', 'APPROVED', 'DELIVERED', 'INVOICED', 'DISPATCHED', 'COMPLETED']);
     expect(stageIdx('INVOICED')).toBe(3);

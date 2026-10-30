@@ -22,7 +22,7 @@ const WORK_TYPES = [
   host: { class: 'sc' },
   template: `
     <app-bar title="Select Work Type" sub="What are you doing today?" [back]="false" />
-    <div class="body pad">
+    <div class="body pad"><div class="card-grid">
       @for (w of types; track w.k) {
         <button type="button" class="card p" style="margin-bottom:10px;display:flex;align-items:center;gap:13px;cursor:pointer;width:100%;text-align:left" (click)="pick(w.k)">
           <div class="qaic" style="background:var(--g2);width:46px;height:46px">{{ w.ic }}</div>
@@ -30,7 +30,7 @@ const WORK_TYPES = [
           <div class="lr-go">›</div>
         </button>
       }
-    </div>
+    </div></div>
 
     <app-sheet [(open)]="joinOpen" heading="Joined Work" subheading="Select the executive to accompany">
       @for (c of colleagues(); track c.id) {

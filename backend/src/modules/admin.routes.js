@@ -3,10 +3,14 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { authorize, ROLES } from '../middleware/auth.js';
+import { memoryImageUploader } from '../middleware/upload.js';
 import { badRequest, notFound } from '../utils/http.js';
+import { logger } from '../utils/logger.js';
+import { faceEngine, storeSecureJpeg, securePath, removeSecure } from '../services/face.js';
 
 export const router = Router();
 router.use(authorize(ROLES.ADMIN));
+const photoUpload = memoryImageUploader(1);
 
 const userSchema = z.object({
   empCode: z.string().trim().min(2).max(20), name: z.string().trim().min(2).max(100),
@@ -19,8 +23,9 @@ const userSchema = z.object({
 
 const dto = u => ({ id: u.UserId, empCode: u.EmpCode, name: u.FullName, mobile: u.Mobile, email: u.Email, role: u.RoleCode,
   designation: u.Designation, region: u.Region, territory: u.Territory, managerId: u.ManagerId, managerName: u.ManagerName,
-  isActive: !!u.IsActive, beatIds: u.BeatIds ? JSON.parse(u.BeatIds).map(b => b.BeatId) : [] });
-const SQL = `SELECT u.*, m.FullName AS ManagerName,
+  isActive: !!u.IsActive, hasPhoto: !!u.ProfilePhotoPath, photoUpdatedAt: u.ProfilePhotoUpdatedAt ?? null, beatIds: u.BeatIds ? JSON.parse(u.BeatIds).map(b => b.BeatId) : [] });
+const SQL = `SELECT u.UserId, u.EmpCode, u.FullName, u.Mobile, u.Email, u.RoleCode, u.Designation, u.Region, u.Territory, u.ManagerId,
+                    u.IsActive, u.ProfilePhotoPath, u.ProfilePhotoUpdatedAt, m.FullName AS ManagerName,
                (SELECT ba.BeatId FROM dbo.BeatAssignments ba WHERE ba.UserId = u.UserId FOR JSON PATH) AS BeatIds
              FROM dbo.Users u LEFT JOIN dbo.Users m ON m.UserId = u.ManagerId`;
 
@@ -70,6 +75,33 @@ router.put('/users/:id/beats', async (req, res) => {
     await db.query('INSERT dbo.BeatAssignments (BeatId, UserId) SELECT value, @id FROM OPENJSON(@b)', { id, b: JSON.stringify([...new Set(beatIds)]) }, tx);
   });
   res.json(dto(await db.one(`${SQL} WHERE u.UserId = @id`, { id })));
+});
+
+/* POST /admin/users/:id/photo  multipart photo — employee profile photo used for attendance face verification */
+router.post('/users/:id/photo', photoUpload.single('photo'), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!req.file) throw badRequest('Choose a photo to upload');
+  if (!(await db.one('SELECT 1 AS x FROM dbo.Users WHERE UserId = @id', { id }))) throw notFound('User');
+  const face = await faceEngine.analyze(req.file.buffer);
+  if (face.faces === 0) throw badRequest('No clear face found — upload a well-lit, front-facing photo of the employee');
+  if (face.faces > 1) throw badRequest('More than one face found — the photo must show only the employee');
+  const key = await storeSecureJpeg('profile-photos', req.file.buffer);
+  const r = await db.one(
+    `UPDATE dbo.Users SET ProfilePhotoPath = @key, FaceDescriptor = @desc, ProfilePhotoUpdatedAt = SYSUTCDATETIME(), ProfilePhotoUpdatedBy = @by
+       OUTPUT deleted.ProfilePhotoPath AS oldPath WHERE UserId = @id`,
+    { id, key, desc: JSON.stringify(face.descriptor.map(v => Math.round(v * 1e6) / 1e6)), by: req.user.id });
+  removeSecure(r?.oldPath);
+  logger.info({ userId: id, by: req.user.id }, 'profile photo updated');
+  res.json(dto(await db.one(`${SQL} WHERE u.UserId = @id`, { id })));
+});
+
+/* GET /admin/users/:id/photo — streamed to admins only; never exposed as a public URL */
+router.get('/users/:id/photo', async (req, res) => {
+  const u = await db.one('SELECT ProfilePhotoPath FROM dbo.Users WHERE UserId = @id', { id: Number(req.params.id) });
+  const file = securePath(u?.ProfilePhotoPath);
+  if (!file) throw notFound('Profile photo');
+  res.set('Cache-Control', 'private, no-store');
+  res.sendFile(file);
 });
 
 router.get('/beats', async (_req, res) => {

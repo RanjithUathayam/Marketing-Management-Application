@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnDestroy, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
@@ -13,7 +13,7 @@ import { AttendanceToday } from '../../core/models';
   template: `
     <header class="bar grad" style="padding-top:44px;justify-content:center"><div class="btitle" style="text-align:center;flex:none">Marketing Management Application</div></header>
     <div class="body" style="display:flex;flex-direction:column">
-      <form class="pad" style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px" (ngSubmit)="submit()">
+      <form class="pad auth-wrap" style="flex:1;display:flex;flex-direction:column;justify-content:center;gap:16px" (ngSubmit)="submit()">
         <div class="center" style="margin-bottom:6px">
           <div style="width:74px;height:74px;border-radius:22px;background:linear-gradient(135deg,#0d6e50,#10a070);display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 14px;box-shadow:0 8px 24px rgba(13,110,80,.3)" aria-hidden="true">🧭</div>
           <h1 style="font-size:20px;font-weight:800">Welcome back</h1>
@@ -39,7 +39,7 @@ import { AttendanceToday } from '../../core/models';
           @if (otpSent()) {
             <div class="between mt12">
               <button class="pillbtn" type="button" (click)="changeNumber()">Change number</button>
-              <button class="pillbtn" type="button" [disabled]="busy()" (click)="send()">Resend OTP</button>
+              <button class="pillbtn" type="button" [disabled]="busy() || cooldown() > 0" (click)="send()">{{ cooldown() > 0 ? 'Resend in ' + cooldown() + 's' : 'Resend OTP' }}</button>
             </div>
           }
           <div class="tiny center mt12">🔒 OTP delivered on SMS + WhatsApp</div>
@@ -48,7 +48,7 @@ import { AttendanceToday } from '../../core/models';
       </form>
     </div>`,
 })
-export class LoginPage {
+export class LoginPage implements OnDestroy {
   private auth = inject(AuthService);
   private api = inject(Api);
   private router = inject(Router);
@@ -72,6 +72,8 @@ export class LoginPage {
       this.devOtp.set(r.devOtp ?? null);
       if (r.devOtp) this.otp = r.devOtp;
       this.ui.toast('📩 OTP sent via SMS + WhatsApp');
+      this.startCooldown(30);
+      setTimeout(() => document.getElementById('otp')?.focus(), 50);
     } catch (e) { this.ui.error(errorMessage(e)); }
     finally { this.busy.set(false); }
   }
@@ -89,5 +91,14 @@ export class LoginPage {
     finally { this.busy.set(false); }
   }
 
-  changeNumber() { this.otpSent.set(false); this.otp = ''; this.devOtp.set(null); }
+  changeNumber() { this.otpSent.set(false); this.otp = ''; this.devOtp.set(null); setTimeout(() => document.getElementById('mobile')?.focus(), 50); }
+
+  cooldown = signal(0);
+  private timer?: ReturnType<typeof setInterval>;
+  private startCooldown(s: number) {
+    clearInterval(this.timer);
+    this.cooldown.set(s);
+    this.timer = setInterval(() => { this.cooldown.update(v => v - 1); if (this.cooldown() <= 0) clearInterval(this.timer); }, 1000);
+  }
+  ngOnDestroy() { clearInterval(this.timer); }
 }

@@ -4,6 +4,7 @@ process.env.JWT_SECRET = 'test-secret-that-is-long-enough-for-the-config-check';
 process.env.OTP_DEV_ECHO = 'true';
 process.env.APP_TIMEZONE = 'Asia/Kolkata';
 process.env.UPLOAD_DIR = process.env.UPLOAD_DIR || 'test-uploads';
+process.env.SECURE_UPLOAD_DIR = process.env.SECURE_UPLOAD_DIR || 'test-secure-uploads';
 
 const { db } = await import('../src/db/index.js');
 const { createApp } = await import('../src/app.js');

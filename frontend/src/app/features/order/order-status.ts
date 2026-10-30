@@ -28,7 +28,7 @@ import { Badges } from '../../core/badges.service';
           <button type="button" role="tab" class="os-chip" [class.on]="filter() === s.k" [style.--c]="s.c" (click)="setFilter(s.k)">{{ s.ic }} {{ s.short }}<em>{{ data()?.statusCounts?.[s.k] ?? 0 }}</em></button>
         }
       </div>
-      <app-state [loading]="loading()" [error]="err()" (retry)="load()">
+      <app-state [loading]="loading()" [error]="err()" (retry)="load()"><div class="card-grid cols-3">
         @for (o of data()?.items ?? []; track o.id; let i = $index) {
           <button type="button" class="os-card" [style.--c]="st(o).c" [style.--c2]="st(o).c2" [style.animation-delay.s]="i * 0.05" (click)="router.navigate(['/orders', o.id])">
             <div class="os-card-top"><div class="os-ic">{{ st(o).ic }}</div><div class="os-main"><b>{{ o.outletName }}</b><span>{{ o.orderNo }} · {{ o.beatName }}@if (auth.isManager()) { · {{ o.execName }} }</span></div><app-status-pill [status]="o.status" [sm]="true" /></div>
@@ -38,6 +38,7 @@ import { Badges } from '../../core/badges.service';
             @if (o.creditHold) { <div class="chip xs c-red mt8">⚠ Credit hold — awaiting approval</div> }
           </button>
         } @empty { <div class="card p empty">No orders match.</div> }
+        </div>
         @if ((data()?.total ?? 0) > (data()?.items?.length ?? 0)) {
           <button class="btn ghost" type="button" (click)="more()">Load more</button>
         }

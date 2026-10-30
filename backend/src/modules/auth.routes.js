@@ -1,18 +1,21 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { env } from '../config/env.js';
 import { authenticate, signAccessToken } from '../middleware/auth.js';
-import { HttpError, badRequest } from '../utils/http.js';
+import { HttpError, badRequest, notFound } from '../utils/http.js';
 import { sendOtp } from '../services/notify.js';
+import { securePath } from '../services/face.js';
 
 export const router = Router();
 
 const mobileSchema = z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number');
+// Keyed by IP + mobile so colleagues behind one office NAT don't lock each other out.
 const otpLimiter = rateLimit({ windowMs: 10 * 60 * 1000, limit: env.isTest ? 1000 : 10, standardHeaders: 'draft-8', legacyHeaders: false,
+  keyGenerator: req => `${ipKeyGenerator(req.ip ?? '')}|${String(req.body?.mobile ?? '').slice(0, 15)}`,
   message: { error: 'Too many attempts. Please wait a few minutes.' } });
 
 const sha256 = s => crypto.createHash('sha256').update(s).digest('hex');
@@ -21,6 +24,7 @@ export const toUserDto = u => ({
   id: u.UserId, empCode: u.EmpCode, name: u.FullName, mobile: u.Mobile, email: u.Email, role: u.RoleCode,
   designation: u.Designation, region: u.Region, territory: u.Territory,
   manager: u.ManagerId ? { id: u.ManagerId, name: u.ManagerName, designation: u.ManagerDesignation } : null,
+  hasPhoto: !!u.ProfilePhotoPath, photoUpdatedAt: u.ProfilePhotoPath ? (u.ProfilePhotoUpdatedAt ?? null) : null,
 });
 const USER_SQL = `SELECT u.*, m.FullName AS ManagerName, m.Designation AS ManagerDesignation
                   FROM dbo.Users u LEFT JOIN dbo.Users m ON m.UserId = u.ManagerId`;
@@ -97,4 +101,13 @@ router.get('/me', authenticate, async (req, res) => {
   const user = await db.one(`${USER_SQL} WHERE u.UserId = @id`, { id: req.user.id });
   if (!user) throw new HttpError(401, 'Account not found');
   res.json(toUserDto(user));
+});
+
+/* GET /auth/me/photo — the signed-in user's own profile photo (added by an admin), for their avatar */
+router.get('/me/photo', authenticate, async (req, res) => {
+  const u = await db.one('SELECT ProfilePhotoPath FROM dbo.Users WHERE UserId = @id', { id: req.user.id });
+  const file = securePath(u?.ProfilePhotoPath);
+  if (!file) throw notFound('Profile photo');
+  res.set('Cache-Control', 'private, no-store');
+  res.sendFile(file);
 });

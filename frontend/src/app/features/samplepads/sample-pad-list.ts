@@ -27,6 +27,7 @@ const QRI = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hi
             <button type="button" role="tab" [class.on]="filter() === f[0]" [attr.aria-selected]="filter() === f[0]" (click)="filter.set(f[0])">{{ f[1] }}<em>{{ count(f[0]) }}</em></button>
           }
         </div>
+        <div class="card-grid cols-2">
         @for (dc of dcs(); track dc.dcNo) {
           <div class="card spx-dc">
             <div class="spx-dc-hd"><div class="spx-k">DC Number</div><div class="spx-k r">DC Date</div><div class="spx-v">{{ dc.dcNo }}</div><div class="spx-v r">{{ dc.dcDate | d: true }}</div></div>
@@ -43,6 +44,7 @@ const QRI = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hi
         } @empty {
           <div class="card empty">{{ !d.issued ? 'No sample pads have been issued to you yet.' : filter() === 'pen' ? 'All your sample pads are acknowledged. 🎉' : 'Nothing acknowledged yet.' }}</div>
         }
+        </div>
         @if (d.issued) { <div class="tiny center" style="padding:12px 10px 4px;line-height:1.5;font-weight:600">Tap a pad's name to show its QR, then scan it to acknowledge receipt.</div> }
       }
     </app-state>

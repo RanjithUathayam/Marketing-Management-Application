@@ -10,8 +10,8 @@ import { MONTHS_LONG, todayIso } from '../core/format';
     <div class="days">
       @for (x of lead(); track $index) { <div class="day off"></div> }
       @for (d of cells(); track d.day) {
-        <div class="day" [class.off]="d.sunday" [class.has]="d.code && !d.sel" [class.sel]="d.sel" [class.today]="d.today" [class.click]="build() && !d.sunday"
-             [attr.role]="build() && !d.sunday ? 'button' : null" [attr.tabindex]="build() && !d.sunday ? 0 : null"
+        <div class="day" [class.off]="d.sunday" [class.has]="d.code && !d.sel" [class.sel]="d.sel" [class.today]="d.today" [class.click]="pickable(d)" [class.past]="build() && d.past"
+             [attr.role]="pickable(d) ? 'button' : null" [attr.tabindex]="pickable(d) ? 0 : null" [attr.aria-disabled]="build() && !pickable(d) ? true : null"
              [attr.aria-pressed]="build() ? d.sel : null" [attr.aria-label]="d.day + (d.code ? ' ' + d.code : '')"
              (click)="tap(d)" (keydown.enter)="tap(d)">{{ d.day }}@if (d.code) {<span class="bdg">{{ d.code }}</span>}</div>
       }
@@ -24,6 +24,8 @@ export class PlanCalendar {
   codes = input<Map<number, string>>(new Map());
   selected = input<Set<number>>(new Set());
   build = input(false);
+  /** In build mode, days before today cannot be (re)planned. */
+  lockPast = input(false);
   toggle = output<number>();
 
   label = computed(() => `${MONTHS_LONG[this.month() - 1]} ${this.year()}`);
@@ -34,9 +36,10 @@ export class PlanCalendar {
     return Array.from({ length: dim }, (_, i) => {
       const day = i + 1, iso = `${this.year()}-${String(this.month()).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const beat = map.get(day);
-      return { day, sunday: new Date(this.year(), this.month() - 1, day).getDay() === 0, today: iso === t,
+      return { day, sunday: new Date(this.year(), this.month() - 1, day).getDay() === 0, today: iso === t, past: this.lockPast() && iso < t,
                code: beat ? (this.codes().get(beat) ?? '').replace('BT-', '') : '', sel: this.selected().has(day) };
     });
   });
-  tap(d: { day: number; sunday: boolean }) { if (this.build() && !d.sunday) this.toggle.emit(d.day); }
+  pickable = (d: { sunday: boolean; past: boolean }) => this.build() && !d.sunday && !d.past;
+  tap(d: { day: number; sunday: boolean; past: boolean }) { if (this.pickable(d)) this.toggle.emit(d.day); }
 }

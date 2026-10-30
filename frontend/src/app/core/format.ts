@@ -5,6 +5,14 @@ export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', '
 export const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export const money = (n: number | null | undefined) => '₹' + Math.round(Number(n ?? 0)).toLocaleString('en-IN');
+/** Short Indian-style amount for chart labels: ₹950 · ₹45k · ₹1.2L · ₹3.4Cr */
+export function compactInr(n: number) {
+  const a = Math.abs(n);
+  if (a >= 1e7) return `₹${+(n / 1e7).toFixed(1)}Cr`;
+  if (a >= 1e5) return `₹${+(n / 1e5).toFixed(1)}L`;
+  if (a >= 1e3) return `₹${Math.round(n / 1e3)}k`;
+  return `₹${Math.round(n)}`;
+}
 export function fmtDT(iso: string | null | undefined, withTime = true) {
   if (!iso) return '';
   const d = new Date(iso);

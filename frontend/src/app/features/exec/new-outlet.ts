@@ -20,7 +20,7 @@ interface Photo { file: File; url: string }
   host: { class: 'sc' },
   template: `
     <app-bar title="New Outlet" [sub]="'Beat ' + (beatName() || '')" fallback="/outlets" />
-    <div class="body pad">
+    <div class="body pad narrow">
       <div class="card p mb12">
         <label class="photo-box" [class.done]="!!shop()">
           @if (shop(); as s) { <img [src]="s.url" alt="Shop front"> } @else { <div style="font-size:34px">🏪</div><div class="muted">Tap to capture shop front (full outlet visible)</div> }

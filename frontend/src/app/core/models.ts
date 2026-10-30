@@ -4,6 +4,7 @@ export interface User {
   id: number; empCode: string; name: string; mobile: string; email?: string | null; role: Role;
   designation?: string | null; region?: string | null; territory?: string | null;
   manager: { id: number; name: string; designation?: string | null } | null;
+  hasPhoto?: boolean; photoUpdatedAt?: string | null;
 }
 export interface AuthResponse { accessToken: string; refreshToken: string; user: User }
 export interface Paged<T> { items: T[]; total: number; page: number; pageSize: number }
@@ -81,7 +82,7 @@ export interface OrderList extends Paged<Order> { totalAmount: number; statusCou
 
 export interface AttendanceToday {
   date: string; dayStarted: boolean; dayEnded: boolean;
-  day: { travelMode: string; odoStart: number | null; odoEnd: number | null; isLate: boolean; startedAt: string; endedAt: string | null; selfie: string | null } | null;
+  day: { travelMode: string; odoStart: number | null; odoEnd: number | null; isLate: boolean; startedAt: string; endedAt: string | null; faceVerified: boolean } | null;
   openSession: { SessionId: number; CheckInAt: string; CheckOutAt: null } | null;
   sessions: { SessionId: number; CheckInAt: string; CheckOutAt: string | null }[];
 }

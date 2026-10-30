@@ -18,7 +18,9 @@ List endpoints accept `page` and `pageSize` and return `{ items, total, page, pa
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/attendance/today` | Day state, open session, today's sessions |
-| POST | `/attendance/start-day` | multipart `selfie`, `travelMode` (OWN_VEHICLE/BUS/CAB/WALK), `odoStart` (own vehicle), `lat`, `lng`. Marks late after `LATE_AFTER`. Opens a session. |
+| POST | `/attendance/face/challenge` | One-time selfie challenge for the signed-in employee → `{ challengeId, direction: LEFT|RIGHT, expiresInSeconds }`. 409 `details.code = PROFILE_PHOTO_MISSING` when no profile photo is registered; 429 after `FACE_MAX_ATTEMPTS_PER_15_MIN`. |
+| POST | `/attendance/face/verify` | multipart `challengeId`, `front` (facing camera), `turned` (head turned to `direction`) — JPG/PNG/WEBP camera frames. Compared server-side with the Employee Master photo → `{ verificationId, status: PASSED|MISMATCH|NO_FACE|MULTIPLE_FACES|LIVENESS_FAILED, verified, message }`. A challenge can be submitted once (400 `CHALLENGE_INVALID` otherwise). |
+| POST | `/attendance/start-day` | `{ verificationId, travelMode (OWN_VEHICLE/BUS/CAB/WALK), odoStart (own vehicle), lat, lng }`. Requires a PASSED, unused verification of the caller made within `FACE_VERIFICATION_VALID_SECONDS` against their current profile photo (400 `FACE_NOT_VERIFIED`). Marks late after `LATE_AFTER`. Opens a session. |
 | POST | `/attendance/check-in` · `/attendance/check-out` | Header check-in/out sessions (one open session at a time) |
 | GET | `/attendance/day-summary` | Visits, sales, GPS km for today |
 | POST | `/attendance/end-day` | `{ odoEnd }` (own vehicle, ≥ start) — closes session and day |
@@ -112,4 +114,5 @@ List endpoints accept `page` and `pageSize` and return `{ items, total, page, pa
 |---|---|---|
 | GET/POST | `/admin/users` · PUT `/admin/users/:id` | Users, roles, reporting manager, active flag (deactivation revokes sessions) |
 | PUT | `/admin/users/:id/beats` | `{ beatIds }` |
+| POST · GET | `/admin/users/:id/photo` | Employee profile photo for attendance face verification: multipart `photo` (must show exactly one face; replaces the previous photo and face template) · GET streams it (`no-store`). Stored under `SECURE_UPLOAD_DIR`, never public. |
 | GET/POST | `/admin/beats` | |

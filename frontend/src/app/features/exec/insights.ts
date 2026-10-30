@@ -5,7 +5,7 @@ import { Api, errorMessage } from '../../core/api.service';
 import { Geo } from '../../core/geo.service';
 import { Ui } from '../../core/ui.service';
 import { TargetSummary, TrackingToday, VisitIndicator } from '../../core/models';
-import { InrPipe, TimePipe, todayIso } from '../../core/format';
+import { InrPipe, TimePipe, compactInr, todayIso } from '../../core/format';
 import { AppBar, StateView, VisitBadge } from '../../shared/ui.components';
 import { RouteMap } from '../../shared/route-map';
 
@@ -21,6 +21,7 @@ import { RouteMap } from '../../shared/route-map';
     <div class="body pad">
       <app-state [loading]="!t() && !err()" [error]="err()" (retry)="load()">
         @if (t(); as t) {
+          <div class="dash-cols"><div>
           <div class="card" style="overflow:hidden">
             <div style="background:linear-gradient(135deg,#e0f2fe,#dbeafe);position:relative">
               <app-route-map [points]="mapPts()" />
@@ -28,6 +29,7 @@ import { RouteMap } from '../../shared/route-map';
             </div>
             <div class="p"><div class="metrics" style="border:none"><div><b>{{ t.visits }}</b><span>Visits</span></div><div><b>{{ t.distanceKm }} km</b><span>Distance</span></div><div><b>{{ hm(t.activeMinutes) }}</b><span>Active</span></div></div></div>
           </div>
+          </div><div>
           <div class="sec-title">Route History</div>
           <div class="card p"><div class="timeline">
             @for (p of t.points; track $index; let last = $last) {
@@ -40,6 +42,7 @@ import { RouteMap } from '../../shared/route-map';
             <div class="between"><span class="muted">Outlets pending in today's beat</span><span class="chip xs" [class.c-amber]="t.outletsPending" [class.c-green]="!t.outletsPending"><span class="d"></span>{{ t.outletsPending }} pending</span></div>
             @if (t.deviations) { <div class="card p mt12" style="background:#fff5f5;border-left:3px solid var(--r)"><b style="font-size:11px;color:var(--r)">⚠ Deviation alert</b><div class="tiny" style="margin-top:2px">{{ t.deviations }} check-in(s) were outside the outlet radius.</div></div> }
           </div>
+          </div></div>
         }
       </app-state>
     </div>`,
@@ -145,7 +148,7 @@ interface Coverage { beatId: number; code: string; name: string; outlets: number
           @if (trend(); as tr) {
             <div class="between" style="margin-bottom:10px"><b style="font-size:13px">Sales — last 6 days · {{ tr.total | inr }}</b>
               @if (tr.changePct !== null) { <span class="chip xs" [class.c-green]="tr.changePct >= 0" [class.c-red]="tr.changePct < 0"><span class="d"></span>{{ tr.changePct >= 0 ? '▲' : '▼' }} {{ abs(tr.changePct) }}%</span> }</div>
-            <div class="bars">@for (d of tr.days; track d.date) { <div [title]="d.date + ': ₹' + d.amount"><i [style.height.%]="barH(d.amount)"></i><span class="tiny">{{ dow(d.date) }}</span></div> }</div>
+            <div class="bars">@for (d of tr.days; track d.date) { <div [title]="d.date + ': ₹' + d.amount"><b class="bar-v">{{ compact(d.amount) }}</b><i [style.height.%]="barH(d.amount)"></i><span class="tiny">{{ dow(d.date) }}</span></div> }</div>
           }
         </app-state>
       </div>
@@ -179,7 +182,8 @@ export class ReportsPage {
   to = this.today;
   type = 'orders';
   abs = Math.abs;
-  links: [string, string, string][] = [['📊', 'Sales', '/targets'], ['🧾', 'Expenses', '/expenses'], ['📡', 'GPS', '/tracking'], ['🎯', 'Targets', '/targets'], ['📦', 'Orders', '/orders'], ['🏪', 'Outlets', '/customers']];
+  compact = compactInr;
+  links:[string, string, string][] = [['📊', 'Sales', '/targets'], ['🧾', 'Expenses', '/expenses'], ['📡', 'GPS', '/tracking'], ['🎯', 'Targets', '/targets'], ['📦', 'Orders', '/orders'], ['🏪', 'Outlets', '/customers']];
   barH = (a: number) => { const m = Math.max(...(this.trend()?.days.map(d => d.amount) ?? [1]), 1); return Math.max(2, (a / m) * 100); };
   dow = (iso: string) => 'SMTWTFS'[new Date(iso + 'T00:00:00').getDay()];
   constructor() {

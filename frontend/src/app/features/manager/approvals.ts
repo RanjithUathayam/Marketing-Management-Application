@@ -20,7 +20,7 @@ interface Recent { kind: string; id: number; userName: string; title: string; st
   template: `
     <app-bar title="Approvals" [sub]="total() + ' pending your action'" [back]="false" />
     <div class="body pad">
-      <app-state [loading]="loading()" [error]="err()" (retry)="load()">
+      <app-state [loading]="loading()" [error]="err()" (retry)="load()"><div class="dash-cols"><div>
         <div class="sec-title">Pending</div>
         <div class="card">
           @for (p of plans(); track p.id) {
@@ -69,6 +69,7 @@ interface Recent { kind: string; id: number; userName: string; title: string; st
           }
           @if (!total()) { <div class="empty">Nothing waiting for you. 🎉</div> }
         </div>
+        </div><div>
         <div class="sec-title">Recently actioned</div>
         <div class="card">
           @for (r of recent(); track r.kind + r.id) {
@@ -77,7 +78,7 @@ interface Recent { kind: string; id: number; userName: string; title: string; st
               <span class="chip xs" [class.c-green]="r.status === 'APPROVED'" [class.c-red]="r.status !== 'APPROVED'"><span class="d"></span>{{ r.status === 'SENTBACK' ? 'Sent back' : r.status.toLowerCase() }}</span></div>
           } @empty { <div class="empty">No recent actions.</div> }
         </div>
-      </app-state>
+      </div></div></app-state>
     </div>
 
     <app-sheet [open]="!!cur()" (openChange)="!$event && cur.set(null)" [heading]="heading()" [subheading]="subheading()">
@@ -201,6 +202,7 @@ export class ApprovalsPage {
     <div class="body pad">
       <app-state [loading]="!p() && !err()" [error]="err()" (retry)="load()">
         @if (p(); as p) {
+          <div class="dash-cols"><div>
           <div class="card p"><div class="row"><div class="av" style="background:#2540d9">{{ ini(p.userName) }}</div>
             <div class="lr-main"><b>{{ p.userName }}</b><span>{{ p.empCode }} · submitted {{ p.submittedAt | dt }}</span></div>
             <span class="chip xs" [class.c-amber]="p.status === 'PENDING'" [class.c-green]="p.status === 'APPROVED'" [class.c-red]="p.status === 'SENTBACK'"><span class="d"></span>{{ p.status }}</span></div>
@@ -214,12 +216,14 @@ export class ApprovalsPage {
               <div><b>{{ attention() }}</b><span>Need attention</span></div></div>
             @if (p.insights) { <div class="center"><app-insight-strip [s]="p.insights" /></div> }
           </div>
+          </div><div>
           @if (p.beats?.length) { <app-beat-list [beats]="p.beats!" heading="Beats in this plan" /> }
           @if (p.status === 'PENDING') {
             <div class="sec-title">Remarks <span style="text-transform:none;font-weight:500;color:var(--t3)">(required if sending back)</span></div>
             <div class="fld"><textarea [(ngModel)]="note" rows="3" maxlength="500" [placeholder]="'Add a note for ' + p.userName.split(' ')[0] + '…'" aria-label="Remarks"></textarea></div>
             <div class="btn-row"><button class="btn danger-ghost" type="button" [disabled]="busy()" (click)="act(false)">Send back</button><button class="btn teal" type="button" [disabled]="busy()" (click)="act(true)">Approve plan</button></div>
           } @else if (p.managerNote) { <div class="card p mt12"><div class="muted">Manager note: "{{ p.managerNote }}"</div></div> }
+          </div></div>
         }
       </app-state>
     </div>`,

@@ -21,6 +21,8 @@ export class Api {
   put<T>(url: string, body: unknown = {}) { return firstValueFrom(this.http.put<T>(this.base + url, body)); }
   /** multipart/form-data — the browser sets the boundary header. */
   upload<T>(url: string, form: FormData) { return firstValueFrom(this.http.post<T>(this.base + url, form)); }
+  /** Authenticated binary GET (e.g. protected images that cannot be loaded by a plain <img src>). */
+  blob(url: string) { return firstValueFrom(this.http.get(this.base + url, { responseType: 'blob' })); }
   async download(url: string, q: Query, filename: string) {
     const blob = await firstValueFrom(this.http.get(this.base + url, { params: this.params(q), responseType: 'blob' }));
     const a = document.createElement('a');
@@ -36,4 +38,9 @@ export function errorMessage(e: unknown): string {
   const err = e as { status?: number; error?: { error?: string }; message?: string };
   if (err?.status === 0) return 'Cannot reach the server. Check your connection.';
   return err?.error?.error || err?.message || 'Something went wrong';
+}
+
+/** Machine-readable `details.code` the API attaches to some errors (e.g. PROFILE_PHOTO_MISSING). */
+export function errorCode(e: unknown): string | null {
+  return (e as { error?: { details?: { code?: string } } })?.error?.details?.code ?? null;
 }

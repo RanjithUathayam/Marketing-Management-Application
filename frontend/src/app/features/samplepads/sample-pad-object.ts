@@ -53,6 +53,20 @@ interface Records extends Paged<SamplePad> { kpis: { issued: number; acknowledge
               } @empty { <tr><td colspan="8" style="text-align:center;color:#706e6b;padding:24px">No records match this view.</td></tr> }
             </tbody>
           </table></div>
+          <!-- phone layout: one card per record instead of a wide table -->
+          <div class="card sf-cards">
+            @for (r of data()?.items ?? []; track r.id) {
+              <div class="spx-rec">
+                <div class="between" style="align-items:flex-start"><b style="font-size:12.5px">{{ r.name }}</b>
+                  @if (r.ackAt) { <span class="sf-pill ack">Acknowledged</span> } @else { <span class="sf-pill pen">Pending</span> }</div>
+                <div class="tiny" style="margin-top:3px;font-weight:600">{{ r.employee }} · {{ r.empCode }} · {{ r.recordNo }}</div>
+                <div class="tiny" style="font-weight:600">{{ r.dcNo }} · {{ r.dcDate | d: true }} · {{ r.subgroup }} · Qty {{ r.qty }}</div>
+                @if (r.ackAt) { <div class="tiny" style="color:#15803d;font-weight:700;margin-top:4px">✓ {{ r.ackAt | dt }} · {{ r.ackVia === 'PHOTO_SCAN' ? 'Photo scan' : 'QR scan' }}</div> }
+                @else { <div class="row" style="margin-top:5px"><span class="tiny" style="color:#b45309;font-weight:700">⏳ Pending@if (r.remindedAt) { · reminded {{ r.remindedAt | dt }} }</span><button type="button" class="spx-remind" (click)="remind([r.id])">🔔 Remind</button></div> }
+                <input class="spx-rem" [ngModel]="r.remarks" (change)="saveRemark(r, $any($event.target).value)" placeholder="Add remark…" [attr.aria-label]="'Remarks for ' + r.name">
+              </div>
+            } @empty { <div class="empty">No records match this view.</div> }
+          </div>
           @if ((data()?.total ?? 0) > (data()?.items?.length ?? 0)) { <button class="btn ghost" type="button" (click)="more()">Load more</button> }
         </app-state>
       </div>

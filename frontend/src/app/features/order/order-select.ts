@@ -35,7 +35,7 @@ const CATS = [{ cls: 'shirt', label: 'Shirt' }, { cls: 'trouser', label: 'Mens T
           @if (t === 'Sample Pad' && padPending()) {<span class="tn" style="background:#ef4444">{{ padPending() }}</span>}</button>
       }
     </div>
-    <div class="body"><div class="pad">
+    <div class="body"><div class="pad contain">
       @if (tab() === 'Sample Pad') {
         <app-sample-pad-list (changed)="padPending.set($event.pending)" />
       } @else if (tab() === 'Quick Pick') {
@@ -54,7 +54,7 @@ const CATS = [{ cls: 'shirt', label: 'Shirt' }, { cls: 'trouser', label: 'Mens T
           </div>
         } @empty { <div class="empty">No products under {{ qpBrand() }} yet.</div> }
       } @else {
-        <app-state [loading]="loading()" [error]="err()" (retry)="load()">
+        <app-state [loading]="loading()" [error]="err()" (retry)="load()"><div class="card-grid">
           @for (p of products(); track p.id) {
             <button type="button" class="card p" style="margin-bottom:8px;display:flex;align-items:center;gap:11px;cursor:pointer;width:100%;text-align:left"
                     [style.border]="store.selected().has(p.id) ? '2px solid var(--g)' : '2px solid transparent'" [style.background]="store.selected().has(p.id) ? '#f0fbf7' : ''"
@@ -74,7 +74,7 @@ const CATS = [{ cls: 'shirt', label: 'Shirt' }, { cls: 'trouser', label: 'Mens T
               <div style="font-size:22px;color:var(--g);font-weight:700">{{ store.selected().has(p.id) ? '✓' : '+' }}</div>
             </button>
           } @empty { <div class="empty">No products match.</div> }
-        </app-state>
+        </div></app-state>
       }
     </div></div>
     @if (tab() !== 'Sample Pad') {
