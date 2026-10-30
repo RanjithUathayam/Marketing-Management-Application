@@ -9,7 +9,7 @@ const product = (id: number, fr: number, alt: number | null = null): MatrixProdu
   id, code: 'p' + id, qrCode: 'Q' + id, name: 'P' + id, icon: '👔', category: 'shirt', brand: 'Ariser', subBrand: 'Shirt',
   factoryRate: fr, halfRate: Math.round(fr * 0.92), mrp: fr * 1.5, scheme: null, altProductId: alt, moq: 5, nonReturnable: false,
   tag: null, hasSleeves: true, colorCount: 1, stockQty: 50, stockBand: { tone: 'green', label: 'ok' }, frequent: false,
-  colors: [{ id: id * 10, code: 'C', name: 'Navy', hex: '#000', isCore: true, stock: { '36': 'IN_STOCK', '38': 'OOS_15' } }],
+  colors: [{ id: id * 10, code: 'C', name: 'Navy', hex: '#000', isCore: true, stock: { '36': 'IN_STOCK', '38': 'OOS_15' }, qty: { '36': 12, '38': 0 } }],
 });
 const outlet = { id: 7, name: 'Sujal Fashion', area: 'Koramangala', mobile: '9880122114' } as Outlet;
 

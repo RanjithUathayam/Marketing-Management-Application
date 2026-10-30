@@ -86,9 +86,9 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
                         </button>
                         @for (sz of sizes(); track sz) {
                           <button type="button" class="mx-cell" [class.stopped]="c.stock[sz] === 'STOPPED'" [class.has]="q(p.id, c.id, sz) > 0" [class.sel]="isSel(p.id, c.id, sz)" [class.asz]="isAsz(p.id, c.id)"
-                                  [disabled]="c.stock[sz] === 'STOPPED'" [title]="stockLabel[c.stock[sz]]" [attr.aria-label]="c.name + ' size ' + sz + ', ' + stockLabel[c.stock[sz]] + ', quantity ' + q(p.id, c.id, sz)"
+                                  [disabled]="c.stock[sz] === 'STOPPED'" [title]="stockLabel[c.stock[sz]] + ' · ' + (c.qty[sz] ?? 0) + ' pcs in stock'" [attr.aria-label]="c.name + ' size ' + sz + ', ' + stockLabel[c.stock[sz]] + ', ' + (c.qty[sz] ?? 0) + ' in stock, quantity ' + q(p.id, c.id, sz)"
                                   (click)="pick(p, c, sz)">
-                            <span class="sb s-{{ tone[c.stock[sz]] }}"></span>{{ c.stock[sz] === 'STOPPED' ? '✕' : q(p.id, c.id, sz) || '—' }}
+                            <span class="sb s-{{ tone[c.stock[sz]] }}"></span><span>{{ c.stock[sz] === 'STOPPED' ? '✕' : q(p.id, c.id, sz) || '—' }}</span><span class="mx-stk">Stk {{ c.qty[sz] ?? 0 }}</span>
                           </button>
                         }
                       </div>

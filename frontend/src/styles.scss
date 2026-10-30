@@ -397,8 +397,9 @@ app-avatar.av{overflow:hidden}
 .hatt-info b.live::before{content:'';display:inline-block;width:6px;height:6px;border-radius:50%;background:#4ade80;margin-right:4px;vertical-align:middle;animation:attBlink 1.4s infinite}
 
 /* ── ORDER MATRIX ── */
-.mx-cell{height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;cursor:pointer;border:1.5px solid var(--brd);background:#fff;color:var(--t3);position:relative;overflow:hidden;padding:0}
+.mx-cell{height:40px;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font-size:12px;font-weight:800;cursor:pointer;border:1.5px solid var(--brd);background:#fff;color:var(--t3);position:relative;overflow:hidden;padding:0}
 .mx-cell .sb{position:absolute;left:0;top:0;bottom:0;width:15%}
+.mx-cell .mx-stk{font-size:9px;font-weight:700;line-height:1;color:var(--t3);opacity:.85}
 .mx-cell.has{background:var(--g2);color:var(--g);border-color:var(--g3)}
 .mx-cell.sel{border-color:var(--g);box-shadow:0 0 0 2px rgba(13,110,80,.2)}
 .mx-cell.asz{border-color:#7c3aed;background:#ede9fe;color:#7c3aed}

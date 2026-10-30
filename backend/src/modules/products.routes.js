@@ -46,7 +46,7 @@ router.get('/products/by-qr/:code', async (req, res) => {
   res.json(productDto(p));
 });
 
-/* GET /products/matrix?ids=1,2 — colours × sizes with stock status per cell */
+/* GET /products/matrix?ids=1,2 — colours × sizes with stock status and quantity on hand per cell */
 router.get('/products/matrix', async (req, res) => {
   const ids = String(req.query.ids || '').split(',').map(Number).filter(n => Number.isInteger(n) && n > 0).slice(0, 30);
   if (!ids.length) return res.json({ sizes: [], products: [] });
@@ -65,6 +65,7 @@ router.get('/products/matrix', async (req, res) => {
       colors: colors.filter(c => c.ProductId === p.ProductId).map(c => ({
         id: c.ColorId, code: c.ColorCode, name: c.ColorName, hex: c.HexValue, isCore: !!c.IsCore,
         stock: Object.fromEntries(stock.filter(s => s.ColorId === c.ColorId).map(s => [s.SizeCode, s.StockStatus])),
+        qty: Object.fromEntries(stock.filter(s => s.ColorId === c.ColorId).map(s => [s.SizeCode, s.QtyOnHand])),
       })),
     })),
   });

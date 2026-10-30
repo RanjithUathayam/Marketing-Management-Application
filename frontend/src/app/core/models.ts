@@ -54,7 +54,7 @@ export interface Product {
   stockBand: { tone: 'red' | 'orange' | 'yellow' | 'green'; label: string }; frequent: boolean;
 }
 export type StockStatus = 'STOPPED' | 'IN_STOCK' | 'OOS_15' | 'REFILL_13' | 'REFILL_30';
-export interface ProductColor { id: number; code: string; name: string; hex: string; isCore: boolean; stock: Record<string, StockStatus> }
+export interface ProductColor { id: number; code: string; name: string; hex: string; isCore: boolean; stock: Record<string, StockStatus>; qty: Record<string, number> }
 export interface MatrixProduct extends Product { colors: ProductColor[] }
 export interface Matrix { sizes: string[]; products: MatrixProduct[]; stockStatuses: Record<StockStatus, { tone: string; label: string; orderable: boolean }> }
 
