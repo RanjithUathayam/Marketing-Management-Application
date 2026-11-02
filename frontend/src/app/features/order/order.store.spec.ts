@@ -74,4 +74,40 @@ describe('OrderStore', () => {
     req.flush({ id: 1 });
     await p;
   });
+
+  it('keeps the demand cart apart from the stock order and totals it separately', () => {
+    store.matrix.set({ sizes: ['36', '38'], products: [product(1, 555)], stockStatuses: {} as Matrix['stockStatuses'] });
+    store.select(1);
+    store.setQty(1, 10, '36', 'FULL', 6);
+    store.setQty(1, 10, '38', 'FULL', 3, 'demand');   // zero stock — demand only
+    expect(store.lines()).toEqual([{ productId: 1, colorId: 10, size: '36', sleeve: 'FULL', qty: 6 }]);
+    expect(store.lines('demand')).toEqual([{ productId: 1, colorId: 10, size: '38', sleeve: 'FULL', qty: 3 }]);
+    expect(store.totals().qty).toBe(6);
+    expect(store.demandTotals()).toEqual({ qty: 3, amount: 3 * 555, mrp: 3 * 832.5, products: 1 });
+    store.clearProduct(1, 'demand');
+    expect(store.lines('demand')).toEqual([]);
+    expect(store.lines()).toHaveLength(1);
+  });
+
+  it('submits the demand with its own idempotent clientRef and clears only the demand afterwards', async () => {
+    store.select(1);
+    store.setQty(1, 10, '36', 'FULL', 6);
+    store.setDemandMode(true);
+    store.setQty(1, 10, '38', 'HALF', 2, 'demand');
+    store.setDemandRemarks('  Wedding order  ');
+    const ref = store.state().demandRef;
+    const p = store.placeDemand();
+    const req = http.expectOne(r => r.url.endsWith('/demand-orders'));
+    expect(req.request.body.clientRef).toBe(ref);
+    expect(req.request.body.clientRef).not.toBe(store.state().clientRef);
+    expect(req.request.body.lines).toEqual([{ productId: 1, colorId: 10, size: '38', sleeve: 'HALF', qty: 2 }]);
+    expect(req.request.body.remarks).toBe('Wedding order');
+    req.flush({ id: 9 });
+    await p;
+    store.clearDemand();
+    expect(store.lines('demand')).toEqual([]);
+    expect(store.demandMode()).toBe(false);
+    expect(store.state().demandRef).not.toBe(ref);
+    expect(store.lines()).toHaveLength(1);              // the stock order survives
+  });
 });

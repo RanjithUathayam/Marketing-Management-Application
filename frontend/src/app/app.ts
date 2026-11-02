@@ -25,6 +25,7 @@ const ICONS = {
   cal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   bell: '<path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 004 0"/>',
   box: '<path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+  demand: '<path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M12 11v6M9 14h6"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/>',
 };
 
@@ -122,6 +123,7 @@ export class App {
     { id: 'work', route: '/work', lbl: 'Visits', ic: this.icon('pin'), group: 'Field work' },
     { id: 'outlets', route: '/outlets', lbl: 'Outlets & Orders', ic: this.icon('store'), group: 'Field work' },
     { id: 'orders', route: '/orders', lbl: 'Order Status', ic: this.icon('clip'), badge: () => this.badges.ordersInProgress(), group: 'Field work' },
+    { id: 'demand', route: '/demand-orders', lbl: 'Demand Orders', ic: this.icon('demand'), group: 'Field work' },
     { id: 'sample-pads', route: '/sample-pads', lbl: 'Sample Pads', ic: this.icon('pad'), group: 'Field work' },
     { id: 'targets', route: '/targets', lbl: 'Targets', ic: this.icon('target'), group: 'Performance' },
     { id: 'reports', route: '/reports', lbl: 'Reports', ic: this.icon('chart'), group: 'Performance' },
@@ -137,6 +139,7 @@ export class App {
     { id: 'mgr-approve', route: '/manager/approvals', lbl: 'Approvals', ic: this.icon('check'), badge: () => this.badges.approvals(), group: 'Team' },
     { id: 'mgr-track', route: '/manager/track', lbl: 'Live Tracking', ic: this.icon('pin'), group: 'Team' },
     { id: 'orders', route: '/orders', lbl: 'Team Orders', ic: this.icon('clip'), group: 'Sales' },
+    { id: 'demand', route: '/demand-orders', lbl: 'Demand Orders', ic: this.icon('demand'), group: 'Sales' },
     { id: 'customers', route: '/customers', lbl: 'Customers', ic: this.icon('store'), group: 'Sales' },
     { id: 'products', route: '/products', lbl: 'Products', ic: this.icon('box'), group: 'Sales' },
     { id: 'pads', route: '/manager/sample-pads', lbl: 'Sample Pad Object', ic: this.icon('pad'), group: 'Sales' },

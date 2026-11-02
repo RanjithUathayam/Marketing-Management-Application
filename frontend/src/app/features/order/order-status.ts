@@ -16,6 +16,10 @@ import { Badges } from '../../core/badges.service';
   template: `
     <app-bar title="Order Status" [sub]="sub()" [back]="auth.isManager()" fallback="/manager" />
     <div class="body pad">
+      <div class="os-switch" role="tablist" aria-label="Order type">
+        <button type="button" role="tab" class="on" [attr.aria-selected]="true">📦 Stock Orders</button>
+        <button type="button" role="tab" [attr.aria-selected]="false" (click)="router.navigateByUrl('/demand-orders')">📝 Demand Orders</button>
+      </div>
       <div class="os-kpis">
         <div><b>{{ (data()?.totalAmount ?? 0) | inr }}</b><span>Total value</span></div>
         <div><b>{{ inProgress() }}</b><span>In progress</span></div>
@@ -36,6 +40,7 @@ import { Badges } from '../../core/badges.service';
             <div class="os-card-bot"><div><span>Placed</span><b>{{ o.orderedAt | dt }}</b></div><div><span>{{ st(o).short }}</span><b>{{ last(o) | dt }}</b></div>
               <div class="r"><span>{{ o.productCount }} prod · {{ o.totalPieces }} pcs</span><b class="amt">{{ o.totalAmount | inr }}</b></div></div>
             @if (o.creditHold) { <div class="chip xs c-red mt8">⚠ Credit hold — awaiting approval</div> }
+            @if (o.demandNo) { <div class="chip xs c-purple mt8">📝 Fulfils demand {{ o.demandNo }}</div> }
           </button>
         } @empty { <div class="card p empty">No orders match.</div> }
         </div>
@@ -104,6 +109,10 @@ export class OrderStatusPage {
               }</div>
             <div class="os-steps-lbl">@for (s of stages; track s.k) { <em>{{ s.short }}</em> }</div>
           </div>
+          @if (o.demandNo) {
+            <button type="button" class="card p mt12" style="display:block;width:100%;text-align:left;cursor:pointer;border-left:3px solid var(--dmd)" (click)="router.navigate(['/demand-orders', o.demandOrderId])">
+              <b style="font-size:12px;color:var(--dmd)">📝 Raised from demand {{ o.demandNo }}</b><div class="tiny">Stock arrived for a customer requirement · view the demand →</div></button>
+          }
           @if (o.creditHold) { <div class="pc-alert mt12">⚠ <span>Credit hold — order + outstanding exceeds the outlet's credit limit. Manager approval is required.</span></div> }
           <div class="metrics" style="margin:12px 0"><div><b>{{ o.totalAmount | inr }}</b><span>Amount</span></div><div><b>{{ o.productCount }}</b><span>Products</span></div><div><b>{{ o.totalPieces }}</b><span>Pieces</span></div></div>
           @if (auth.isManager()) { <div class="tiny mb12">Executive: <b>{{ o.execName }}</b> ({{ o.empCode }}) · Terms: {{ o.paymentTerms }}</div> }
@@ -127,7 +136,7 @@ export class OrderStatusPage {
           <div class="card p mt12">
             <div class="between"><span class="muted">Subtotal</span><b>{{ o.subTotal | inr }}</b></div>
             <div class="between mt8"><span class="muted">Tax</span><span>{{ o.taxAmount | inr }}</span></div>
-            <div class="between mt8"><span class="muted">Delivery</span><span>{{ o.transport.mode }} · {{ o.transport.transporter }} · {{ o.transport.deliveryDate }}</span></div>
+            @if (o.transport.mode) { <div class="between mt8"><span class="muted">Delivery</span><span>{{ o.transport.mode }} · {{ o.transport.transporter }} · {{ o.transport.deliveryDate }}</span></div> }
             @if (o.instructions) { <div class="tiny mt8">Note: {{ o.instructions }}</div> }
             @if (o.signatureUrl) { <img [src]="o.signatureUrl" alt="Customer signature" style="max-width:180px;margin-top:10px;border:1px solid var(--brd);border-radius:8px"> }
           </div>
@@ -141,6 +150,7 @@ export class OrderStatusPage {
 export class OrderDetailPage {
   id = input.required<string>();
   auth = inject(AuthService);
+  router = inject(Router);
   private api = inject(Api);
   private ui = inject(Ui);
   private badges = inject(Badges);

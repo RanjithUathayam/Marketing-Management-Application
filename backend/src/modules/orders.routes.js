@@ -32,12 +32,12 @@ const orderSchema = quoteSchema.extend({
   lat: z.number().optional(), lng: z.number().optional(),
 });
 
-/** Catalog map for priceOrder(): products + colours + stock grid. */
-async function loadCatalog(productIds, tx) {
+/** Catalog map for priceOrder(): products + colours + stock grid (status and quantity on hand). */
+export async function loadCatalog(productIds, tx) {
   const [products, colors, stock] = await db.queryMulti(
     `SELECT * FROM dbo.Products WHERE IsActive = 1 AND ProductId IN (SELECT value FROM OPENJSON(@ids));
      SELECT ColorId, ProductId, ColorName FROM dbo.ProductColors WHERE ProductId IN (SELECT value FROM OPENJSON(@ids));
-     SELECT s.ColorId, s.SizeCode, s.StockStatus FROM dbo.StockLevels s JOIN dbo.ProductColors c ON c.ColorId = s.ColorId
+     SELECT s.ColorId, s.SizeCode, s.StockStatus, s.QtyOnHand FROM dbo.StockLevels s JOIN dbo.ProductColors c ON c.ColorId = s.ColorId
       WHERE c.ProductId IN (SELECT value FROM OPENJSON(@ids));`, { ids: JSON.stringify([...new Set(productIds)]) }, tx);
   return new Map(products.map(p => [p.ProductId, {
     productName: p.ProductName, factoryRate: Number(p.FactoryRate), mrp: Number(p.Mrp), moq: p.Moq,
@@ -45,19 +45,25 @@ async function loadCatalog(productIds, tx) {
     schemeBuyQty: p.SchemeBuyQty, schemeFreeQty: p.SchemeFreeQty,
     colors: new Map(colors.filter(c => c.ProductId === p.ProductId).map(c => [c.ColorId, {
       colorName: c.ColorName, stock: Object.fromEntries(stock.filter(s => s.ColorId === c.ColorId).map(s => [s.SizeCode, s.StockStatus])),
+      qty: Object.fromEntries(stock.filter(s => s.ColorId === c.ColorId).map(s => [s.SizeCode, s.QtyOnHand ?? 0])),
     }])),
   }]));
+}
+
+/** Outstanding vs credit limit of an approved outlet, and whether `amount` on `terms` would exceed it. */
+export async function creditCheck(outletId, amount, terms, tx) {
+  const bal = await db.one(
+    `SELECT b.Outstanding, o.CreditLimit, o.OutletName FROM dbo.vw_OutletBalance b JOIN dbo.Outlets o ON o.OutletId = b.OutletId
+      WHERE b.OutletId = @id AND o.ApprovalStatus = 'APPROVED'`, { id: outletId }, tx);
+  if (!bal) throw badRequest('Outlet is not approved for order taking');
+  const credit = { outstanding: Number(bal.Outstanding), creditLimit: Number(bal.CreditLimit) };
+  return { ...credit, exceeds: exceedsCredit(credit, amount, terms) };
 }
 
 async function quote(body, tx) {
   const catalog = await loadCatalog(body.lines.map(l => l.productId), tx);
   const priced = priceOrder(body.lines, catalog, { taxRate: env.taxRate });
-  const bal = await db.one(
-    `SELECT b.Outstanding, o.CreditLimit, o.OutletName FROM dbo.vw_OutletBalance b JOIN dbo.Outlets o ON o.OutletId = b.OutletId
-      WHERE b.OutletId = @id AND o.ApprovalStatus = 'APPROVED'`, { id: body.outletId }, tx);
-  if (!bal) throw badRequest('Outlet is not approved for order taking');
-  const credit = { outstanding: Number(bal.Outstanding), creditLimit: Number(bal.CreditLimit) };
-  return { ...priced, credit: { ...credit, exceeds: exceedsCredit(credit, priced.totalAmount, body.paymentTerms) } };
+  return { ...priced, credit: await creditCheck(body.outletId, priced.totalAmount, body.paymentTerms, tx) };
 }
 
 /* POST /orders/quote — authoritative totals, scheme benefit and credit-limit check for the summary screen */
@@ -79,24 +85,11 @@ router.post('/orders', async (req, res) => {
   const orderId = await db.transaction(async tx => {
     await lockOutlet(body.outletId, tx);
     const q = await quote(body, tx);
-    const o = await db.one(
-      `DECLARE @no VARCHAR(20) = CONCAT('ORD-', YEAR(SYSUTCDATETIME()), '-', NEXT VALUE FOR dbo.OrderNoSeq);
-       INSERT dbo.Orders (OrderNo, OutletId, UserId, SubTotal, MrpValue, SchemeValue, TaxAmount, TotalAmount, TotalPieces, PaymentTerms,
-                          Instructions, SignaturePath, TransportMode, Transporter, Destination, DeliveryDate, CurrentStatus, CreditHold,
-                          Latitude, Longitude, ClientRef)
-       OUTPUT inserted.OrderId, inserted.OrderNo
-       VALUES (@no, @outlet, @u, @sub, @mrp, @scheme, @tax, @total, @pcs, @terms, @instr, @sig, @mode, @trn, @dest, @dd, 'RECEIVED', @hold, @lat, @lng, @ref)`,
-      { outlet: body.outletId, u: req.user.id, sub: q.subTotal, mrp: q.mrpValue, scheme: q.schemeValue, tax: q.taxAmount,
-        total: q.totalAmount, pcs: q.totalPieces, terms: body.paymentTerms, instr: body.instructions || null, sig: signaturePath,
-        mode: body.transport.mode, trn: body.transport.transporter, dest: body.transport.destination, dd: body.transport.deliveryDate,
-        hold: q.credit.exceeds, lat: body.lat ?? null, lng: body.lng ?? null, ref: body.clientRef }, tx);
-    await db.query(
-      `INSERT dbo.OrderLines (OrderId, ProductId, ColorId, SizeCode, Sleeve, Qty, UnitPrice, UnitMrp)
-       SELECT @id, productId, colorId, size, sleeve, qty, unitPrice, unitMrp
-         FROM OPENJSON(@lines) WITH (productId INT, colorId INT, size VARCHAR(5), sleeve VARCHAR(4), qty INT,
-                                     unitPrice DECIMAL(10,2), unitMrp DECIMAL(10,2));
-       INSERT dbo.OrderStatusLog (OrderId, StatusCode, ChangedBy) VALUES (@id, 'RECEIVED', @u);`,
-      { id: o.OrderId, lines: JSON.stringify(q.lines), u: req.user.id }, tx);
+    const o = await insertOrder(q, {
+      outletId: body.outletId, userId: req.user.id, changedBy: req.user.id, paymentTerms: body.paymentTerms,
+      instructions: body.instructions || null, signaturePath, transport: body.transport,
+      lat: body.lat ?? null, lng: body.lng ?? null, clientRef: body.clientRef,
+    }, tx);
     const distanceM = await geofenceDistance(body.outletId, body, req.user.id, tx);
     await db.exec('dbo.usp_RecordOutletVisit', { UserId: req.user.id, OutletId: body.outletId, VisitDate: localDate(), Ordered: true,
       NoOrderReason: null, Notes: null, Latitude: body.lat ?? null, Longitude: body.lng ?? null, DistanceM: distanceM }, tx);
@@ -109,8 +102,34 @@ router.post('/orders', async (req, res) => {
   res.status(201).json(await loadOrder(orderId));
 });
 
+/** Inserts a priced order (`q` = priceOrder result + credit) with its lines and the RECEIVED log entry. Returns { OrderId, OrderNo }. */
+export async function insertOrder(q, f, tx) {
+  const o = await db.one(
+    `DECLARE @no VARCHAR(20) = CONCAT('ORD-', YEAR(SYSUTCDATETIME()), '-', NEXT VALUE FOR dbo.OrderNoSeq);
+     INSERT dbo.Orders (OrderNo, OutletId, UserId, SubTotal, MrpValue, SchemeValue, TaxAmount, TotalAmount, TotalPieces, PaymentTerms,
+                        Instructions, SignaturePath, TransportMode, Transporter, Destination, DeliveryDate, CurrentStatus, CreditHold,
+                        Latitude, Longitude, ClientRef, DemandOrderId)
+     OUTPUT inserted.OrderId, inserted.OrderNo
+     VALUES (@no, @outlet, @u, @sub, @mrp, @scheme, @tax, @total, @pcs, @terms, @instr, @sig, @mode, @trn, @dest, @dd, 'RECEIVED', @hold,
+             @lat, @lng, @ref, @demand)`,
+    { outlet: f.outletId, u: f.userId, sub: q.subTotal, mrp: q.mrpValue, scheme: q.schemeValue, tax: q.taxAmount,
+      total: q.totalAmount, pcs: q.totalPieces, terms: f.paymentTerms, instr: f.instructions ?? null, sig: f.signaturePath ?? null,
+      mode: f.transport?.mode ?? null, trn: f.transport?.transporter ?? null, dest: f.transport?.destination ?? null,
+      dd: f.transport?.deliveryDate ?? null, hold: q.credit.exceeds, lat: f.lat ?? null, lng: f.lng ?? null, ref: f.clientRef ?? null,
+      demand: f.demandOrderId ?? null }, tx);
+  await db.query(
+    `INSERT dbo.OrderLines (OrderId, ProductId, ColorId, SizeCode, Sleeve, Qty, UnitPrice, UnitMrp)
+     SELECT @id, productId, colorId, size, sleeve, qty, unitPrice, unitMrp
+       FROM OPENJSON(@lines) WITH (productId INT, colorId INT, size VARCHAR(5), sleeve VARCHAR(4), qty INT,
+                                   unitPrice DECIMAL(10,2), unitMrp DECIMAL(10,2));
+     INSERT dbo.OrderStatusLog (OrderId, StatusCode, ChangedBy, Note) VALUES (@id, 'RECEIVED', @u, @note);`,
+    { id: o.OrderId, lines: JSON.stringify(q.lines), u: f.changedBy, note: f.note ?? null }, tx);
+  return o;
+}
+
 const ORDER_SQL = `
   SELECT o.*, ot.OutletName, b.BeatCode, b.BeatName, u.FullName AS ExecName, u.EmpCode,
+         (SELECT d.DemandNo FROM dbo.DemandOrders d WHERE d.DemandOrderId = o.DemandOrderId) AS DemandNo,
          (SELECT COUNT(DISTINCT ProductId) FROM dbo.OrderLines l WHERE l.OrderId = o.OrderId) AS ProductCount
   FROM dbo.Orders o JOIN dbo.Outlets ot ON ot.OutletId = o.OutletId JOIN dbo.Beats b ON b.BeatId = ot.BeatId
   JOIN dbo.Users u ON u.UserId = o.UserId`;
@@ -121,7 +140,7 @@ const orderDto = (o, log = []) => ({
   totalAmount: Number(o.TotalAmount), totalPieces: o.TotalPieces, productCount: o.ProductCount,
   paymentTerms: o.PaymentTerms, instructions: o.Instructions, signatureUrl: o.SignaturePath,
   transport: { mode: o.TransportMode, transporter: o.Transporter, destination: o.Destination, deliveryDate: toIso(o.DeliveryDate) },
-  status: o.CurrentStatus, creditHold: !!o.CreditHold, invoiceNo: o.InvoiceNo, lrNo: o.LrNo, receivedBy: o.ReceivedBy,
+  status: o.CurrentStatus, creditHold: !!o.CreditHold, demandOrderId: o.DemandOrderId ?? null, demandNo: o.DemandNo ?? null, invoiceNo: o.InvoiceNo, lrNo: o.LrNo, receivedBy: o.ReceivedBy,
   log: log.filter(l => l.OrderId === o.OrderId).map(l => ({ status: l.StatusCode, at: l.ChangedAt, by: l.ByName, note: l.Note })),
 });
 

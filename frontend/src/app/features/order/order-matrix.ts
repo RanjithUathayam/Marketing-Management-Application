@@ -6,7 +6,7 @@ import { Ui } from '../../core/ui.service';
 import { MatrixProduct, ProductColor, Sleeve, StockStatus } from '../../core/models';
 import { InrPipe, STOCK_LABEL, STOCK_TONE } from '../../core/format';
 import { AppBar, StateView } from '../../shared/ui.components';
-import { OrderStore } from './order.store';
+import { Cart, OrderStore } from './order.store';
 
 interface KCtx { pid: number; colorId: number; size: string; mode: 'single' | 'all' }
 const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
@@ -20,10 +20,19 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
   host: { class: 'sc' },
   template: `
     <app-bar title="Order Matrix" [sub]="store.outlet()?.name" fallback="/order">
-      <button class="bar-preview" type="button" [disabled]="!store.totals().qty" (click)="preview()">Preview →</button>
+      @if (demand()) {
+        <button class="bar-preview dmd" type="button" [disabled]="!store.demandTotals().qty" (click)="reviewDemand()">Review Demand →</button>
+      } @else {
+        <button class="bar-preview" type="button" [disabled]="!store.totals().qty" (click)="preview()">Preview →</button>
+      }
       <button class="bico" type="button" (click)="router.navigateByUrl('/order')" aria-label="Add products">＋</button>
     </app-bar>
     <div class="body pad" id="mx-body">
+      @if (demand()) {
+        <div class="dmd-banner" role="status"><span class="dmd-ic">📝</span>
+          <div><b>Demand Order</b><span>Only sizes with zero stock (S 0) can be picked. It is sent for review as a requirement; sizes with stock go on the stock order.@if (store.totals().qty) { Your stock order ({{ store.totals().qty }} pcs) is kept separately. }</span></div>
+          <button type="button" (click)="toggleDemand()">Exit</button></div>
+      }
       <app-state [loading]="loading()" [error]="err()" (retry)="load()">
         @for (p of products(); track p.id) {
           <div class="card" style="margin-bottom:9px;overflow:hidden" [id]="'mp-' + p.id">
@@ -35,7 +44,8 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
                   @if (p.scheme) { <span class="chip xs c-amber" role="button" tabindex="0" (click)="$event.stopPropagation(); ui.toast('🎁 ' + p.name + ': ' + p.scheme.text)">🎁 OFFER</span>
                     @if (nudge(p); as n) { <span class="sn-mini" [class.win]="n.win">{{ n.text }}</span> } }
                   @if (p.nonReturnable) { <span class="chip xs c-red">Non-ret</span> }
-                  @if (compare()?.alternate === p.id && totals(p).qty) {
+                  @if (!demand() && dTotals(p).qty) { <span class="chip xs c-purple">📝 {{ dTotals(p).qty }} on demand</span> }
+                  @if (!demand() && compare()?.alternate === p.id && totals(p).qty) {
                     <span class="row" style="gap:5px"><button type="button" class="pillbtn" style="padding:3px 8px;font-size:10px" (click)="$event.stopPropagation(); useOriginal()">↺ Use</button>
                       <button type="button" class="pillbtn on" style="padding:3px 8px;font-size:10px;background:linear-gradient(135deg,#7c3aed,#db2777);border:0" (click)="$event.stopPropagation(); useAlternate()">✓ Alter</button></span>
                   }</div>
@@ -43,8 +53,8 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
               </div>
               <div style="text-align:right"><div style="font-size:17px;font-weight:800;line-height:1">{{ totals(p).qty }}</div><div style="font-size:11px;color:var(--g);font-weight:700">{{ totals(p).amount | inr }}</div></div>
             </button>
-            @if (totals(p).qty > 0 && totals(p).qty < p.moq) { <div class="chip c-red" style="margin:0 12px 8px">⚠ MOQ is {{ p.moq }} — add {{ p.moq - totals(p).qty }} more</div> }
-            @if (p.altProductId && stock(p); as s) {
+            @if (!demand() && totals(p).qty > 0 && totals(p).qty < p.moq) { <div class="chip c-red" style="margin:0 12px 8px">⚠ MOQ is {{ p.moq }} — add {{ p.moq - totals(p).qty }} more</div> }
+            @if (!demand() && p.altProductId && stock(p); as s) {
               <div class="stock-ind" [class.ok]="!s.warn" [class.warn]="s.warn">
                 <div class="wrap" style="gap:5px">@for (c of s.chips; track c.tone) { <span class="qchip {{ c.tone }}"><i></i>{{ c.qty }}</span> }</div>
                 <div class="row" style="gap:7px;flex-wrap:wrap">
@@ -69,6 +79,8 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
                 <div class="row mb12 mx-tools" style="gap:6px">
                   <div class="sbox" style="flex:1;padding:6px 10px"><span>🔍</span><input [ngModel]="colorQuery()[p.id] || ''" (ngModelChange)="setQuery(p.id, $event)" placeholder="Search colour…" [attr.aria-label]="'Search colour in ' + p.name"></div>
                   <div class="seg" style="padding:2px">@for (c of cats; track c[0]) { <button type="button" style="padding:6px 8px;font-size:10px" [class.on]="(catSel()[p.id] || 'all') === c[0]" (click)="setCat(p.id, c[0])">{{ c[1] }}</button> }</div>
+                  <button type="button" class="dmd-btn" [class.on]="demand()" [attr.aria-pressed]="demand()" (click)="toggleDemand()"
+                          title="Order sizes that have zero stock (S 0)">📝 Demand Order</button>
                 </div>
                 <div class="wrap" style="gap:5px 10px;margin-bottom:6px">
                   @for (l of legend; track l.st) { <span style="display:flex;align-items:center;gap:3px;font-size:9px;color:#6b7280;font-weight:600"><span style="width:8px;height:8px;border-radius:2px" [style.background]="l.c"></span>{{ l.lbl }}@if (tally(p, l.st); as n) {<b class="sn-mini" style="padding:0 4px">{{ n }}</b>}</span> }
@@ -85,10 +97,10 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
                           <span style="min-width:0"><span style="display:block;font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.name }}</span><span style="display:block;font-size:9px;color:var(--t3);white-space:nowrap">{{ c.code }}</span></span>
                         </button>
                         @for (sz of sizes(); track sz) {
-                          <button type="button" class="mx-cell" [class.stopped]="c.stock[sz] === 'STOPPED'" [class.has]="q(p.id, c.id, sz) > 0" [class.sel]="isSel(p.id, c.id, sz)" [class.asz]="isAsz(p.id, c.id)"
-                                  [disabled]="c.stock[sz] === 'STOPPED'" [title]="stockLabel[c.stock[sz]] + ' · ' + (c.qty[sz] ?? 0) + ' pcs in stock'" [attr.aria-label]="c.name + ' size ' + sz + ', ' + stockLabel[c.stock[sz]] + ', ' + (c.qty[sz] ?? 0) + ' in stock, quantity ' + q(p.id, c.id, sz)"
+                          <button type="button" class="mx-cell" [class.dmd]="demand()" [class.stopped]="c.stock[sz] === 'STOPPED'" [class.has]="q(p.id, c.id, sz) > 0" [class.sel]="isSel(p.id, c.id, sz)" [class.asz]="isAsz(p.id, c.id)"
+                                  [disabled]="!orderable(c, sz)" [title]="cellLabel(c, sz)" [attr.aria-label]="c.name + ' size ' + sz + ', ' + cellLabel(c, sz) + ', ' + (demand() ? 'demand ' : '') + 'quantity ' + q(p.id, c.id, sz)"
                                   (click)="pick(p, c, sz)">
-                            <span class="sb s-{{ tone[c.stock[sz]] }}"></span><span>{{ c.stock[sz] === 'STOPPED' ? '✕' : q(p.id, c.id, sz) || '—' }}</span><span class="mx-stk">Stk {{ c.qty[sz] ?? 0 }}</span>
+                            <span class="sb s-{{ tone[c.stock[sz]] }}"></span><span>{{ c.stock[sz] === 'STOPPED' && !q(p.id, c.id, sz) ? '✕' : q(p.id, c.id, sz) || '—' }}</span><span class="mx-stk">S {{ c.qty[sz] ?? 0 }}</span>
                           </button>
                         }
                       </div>
@@ -123,9 +135,9 @@ const LEGEND: { st: StockStatus; c: string; lbl: string }[] = [
         </div>
       </div>
     }
-    <div class="bbar" style="padding:9px 12px;background:var(--gdk);color:#fff">
+    <div class="bbar mx-totals" [class.dmd]="demand()" style="padding:9px 12px;color:#fff">
       @for (t of liveTotals(); track t[0]) {
-        <div style="flex:1;text-align:center"><div style="font-size:9px;opacity:.6;font-weight:600;text-transform:uppercase">{{ t[0] }}</div><div style="font-size:14px;font-weight:800" [style.color]="t[0] === 'Amount' ? '#4ade80' : ''">{{ t[1] }}</div></div>
+        <div style="flex:1;text-align:center"><div style="font-size:9px;opacity:.6;font-weight:600;text-transform:uppercase">{{ t[0] }}</div><div style="font-size:14px;font-weight:800" [style.color]="t[0] === 'Amount' || t[0] === 'Est. Value' ? (demand() ? '#ddd6fe' : '#4ade80') : ''">{{ t[1] }}</div></div>
       }
     </div>`,
 })
@@ -147,9 +159,16 @@ export class OrderMatrixPage {
   legend = LEGEND;
   tone = STOCK_TONE;
   stockLabel = STOCK_LABEL;
+  /** Demand Order mode: quantities go to the separate demand cart and only zero-stock cells may be picked. */
+  demand = this.store.demandMode;
+  cart = computed<Cart>(() => (this.demand() ? 'demand' : 'qty'));
   sizes = computed(() => this.store.matrix()?.sizes ?? []);
   products = computed(() => (this.store.matrix()?.products ?? []).filter(p => this.store.selected().has(p.id)));
   liveTotals = computed(() => {
+    if (this.demand()) {
+      const d = this.store.demandTotals();
+      return [['Demand Products', String(d.products)], ['Demand Qty', String(d.qty)], ['Est. Value', '₹' + d.amount.toLocaleString('en-IN')], ['MRP Value', '₹' + d.mrp.toLocaleString('en-IN')]];
+    }
     const t = this.store.totals();
     return [['Products', String(t.products)], ['Total Qty', String(t.qty)], ['Amount', '₹' + t.amount.toLocaleString('en-IN')], ['MRP Value', '₹' + t.mrp.toLocaleString('en-IN')]];
   });
@@ -174,8 +193,18 @@ export class OrderMatrixPage {
 
   isOpen = (pid: number) => this.opened().has(pid);
   toggleOpen(pid: number) { const s = new Set(this.opened()); s.has(pid) ? s.delete(pid) : s.add(pid); this.opened.set(s); if (!s.has(pid)) this.closeKpad(); }
-  totals = (p: MatrixProduct) => this.store.productTotals(p);
-  q = (pid: number, colorId: number, size: string) => this.store.qtyOf(pid, colorId, size, this.store.sleeveOf(pid));
+  totals = (p: MatrixProduct) => this.store.productTotals(p, this.cart());
+  dTotals = (p: MatrixProduct) => this.store.productTotals(p, 'demand');
+  q = (pid: number, colorId: number, size: string) => this.store.qtyOf(pid, colorId, size, this.store.sleeveOf(pid), this.cart());
+  /** Stock orders need stock on hand (and the cell not stopped); demand orders take only zero-stock cells. */
+  orderable = (c: ProductColor, sz: string) => ((c.qty[sz] ?? 0) > 0 ? !this.demand() && c.stock[sz] !== 'STOPPED' : this.demand());
+  cellLabel = (c: ProductColor, sz: string) => `${this.stockLabel[c.stock[sz]] ?? 'Not stocked'} · ${c.qty[sz] ?? 0} pcs in stock`
+    + (this.orderable(c, sz) ? '' : (c.qty[sz] ?? 0) > 0 ? (this.demand() ? ' — in stock, take it as a stock order' : '') : ' — use Demand Order');
+  /** Pieces of a colour × size still available to the stock order (full and half sleeve share the stock). */
+  private avail(p: MatrixProduct, c: ProductColor, sz: string, sl: Sleeve) {
+    const other: Sleeve = sl === 'FULL' ? 'HALF' : 'FULL';
+    return Math.max(0, (c.qty[sz] ?? 0) - this.store.qtyOf(p.id, c.id, sz, other));
+  }
   isSel = (pid: number, colorId: number, size: string) => { const k = this.kctx(); return !!k && k.mode === 'single' && k.pid === pid && k.colorId === colorId && k.size === size; };
   isAsz = (pid: number, colorId: number) => { const k = this.kctx(); return !!k && k.mode === 'all' && k.pid === pid && k.colorId === colorId; };
   colorName = (p: MatrixProduct, id: number) => p.colors.find(c => c.id === id)?.name ?? '';
@@ -191,13 +220,13 @@ export class OrderMatrixPage {
   tally(p: MatrixProduct, st: StockStatus) {
     const sl = this.store.sleeveOf(p.id);
     let n = 0;
-    for (const c of p.colors) for (const s of this.sizes()) if (c.stock[s] === st) n += this.store.qtyOf(p.id, c.id, s, sl);
+    for (const c of p.colors) for (const s of this.sizes()) if (c.stock[s] === st) n += this.store.qtyOf(p.id, c.id, s, sl, this.cart());
     return n;
   }
   /** Scheme nudge: "+n → k FREE" or "🎉 k FREE". */
   nudge(p: MatrixProduct) {
     const t = this.totals(p).qty, buy = p.scheme?.buyQty ?? 0, free = p.scheme?.freeQty ?? 0;
-    if (!t || !buy) return null;
+    if (!t || !buy || this.demand()) return null;
     const earned = Math.floor(t / buy) * free, rem = t % buy;
     return rem === 0 ? { text: `🎉 ${earned} FREE`, win: true } : { text: `+${buy - rem} → ${earned + free} FREE`, win: false };
   }
@@ -248,7 +277,7 @@ export class OrderMatrixPage {
   /** True until the first digit after opening a cell: that digit replaces the old quantity instead of appending to it. */
   private fresh = true;
   pick(p: MatrixProduct, c: ProductColor, sz: string) {
-    if (c.stock[sz] === 'STOPPED') return;
+    if (!this.orderable(c, sz)) return;
     this.kctx.set({ pid: p.id, colorId: c.id, size: sz, mode: 'single' });
     const v = this.q(p.id, c.id, sz);
     this.kval.set(v ? String(v) : '');
@@ -257,8 +286,8 @@ export class OrderMatrixPage {
   allSizes(p: MatrixProduct, c: ProductColor) {
     const k = this.kctx();
     if (k?.mode === 'all' && k.pid === p.id && k.colorId === c.id) { this.closeKpad(); return; }
-    const first = this.sizes().find(s => c.stock[s] !== 'STOPPED');
-    if (!first) { this.ui.error(`${c.name} is stopped in every size`); return; }
+    const first = this.sizes().find(s => this.orderable(c, s));
+    if (!first) { this.ui.error(this.demand() ? `${c.name} has stock in every size — take it as a stock order` : `${c.name} has no stock in any size — use 📝 Demand Order`); return; }
     this.kctx.set({ pid: p.id, colorId: c.id, size: first, mode: 'all' });
     const v = this.q(p.id, c.id, first);
     this.kval.set(v ? String(v) : '');
@@ -266,7 +295,8 @@ export class OrderMatrixPage {
   }
   kLabel() {
     const k = this.kctx()!, p = this.products().find(x => x.id === k.pid)!, sl = this.store.sleeveOf(k.pid) === 'HALF' ? 'Half Sleeve' : 'Full Sleeve';
-    return k.mode === 'all' ? `All sizes · ${p.hasSleeves ? sl + ' · ' : ''}${this.colorName(p, k.colorId)}` : `Size ${k.size} · ${p.hasSleeves ? sl + ' · ' : ''}${this.colorName(p, k.colorId)}`;
+    const what = k.mode === 'all' ? `All sizes · ${p.hasSleeves ? sl + ' · ' : ''}${this.colorName(p, k.colorId)}` : `Size ${k.size} · ${p.hasSleeves ? sl + ' · ' : ''}${this.colorName(p, k.colorId)}`;
+    return this.demand() ? '📝 Demand · ' + what : what;
   }
   kCtxText() {
     const k = this.kctx()!, p = this.products().find(x => x.id === k.pid)!;
@@ -275,10 +305,20 @@ export class OrderMatrixPage {
   }
   private commit() {
     const k = this.kctx(); if (!k) return;
-    const p = this.products().find(x => x.id === k.pid)!, c = p.colors.find(x => x.id === k.colorId)!, sl = this.store.sleeveOf(k.pid), v = +this.kval() || 0;
-    if (k.mode === 'all') for (const s of this.sizes()) { if (c.stock[s] !== 'STOPPED') this.store.setQty(p.id, c.id, s, sl, v); }
-    else this.store.setQty(p.id, c.id, k.size, sl, v);
-    if (p.scheme?.buyQty && this.totals(p).qty >= p.scheme.buyQty && v) {
+    const p = this.products().find(x => x.id === k.pid)!, c = p.colors.find(x => x.id === k.colorId)!, sl = this.store.sleeveOf(k.pid);
+    let v = +this.kval() || 0;
+    // Stock orders are capped at stock on hand; anything beyond goes on a demand order.
+    const cap = (s: string, n: number) => (this.demand() ? n : Math.min(n, this.avail(p, c, s, sl)));
+    if (k.mode === 'all') {
+      let capped = false;
+      for (const s of this.sizes()) if (this.orderable(c, s)) { const n = cap(s, v); capped ||= n < v; this.store.setQty(p.id, c.id, s, sl, n, this.cart()); }
+      if (capped) this.ui.toast('Some sizes were limited to the stock on hand — use 📝 Demand Order for more');
+    } else {
+      const n = cap(k.size, v);
+      if (n < v) { this.ui.toast(`Only ${n} pcs in stock for size ${k.size} — use 📝 Demand Order for more`); v = n; this.kval.set(n ? String(n) : ''); }
+      this.store.setQty(p.id, c.id, k.size, sl, v, this.cart());
+    }
+    if (!this.demand() && p.scheme?.buyQty && this.totals(p).qty >= p.scheme.buyQty && v) {
       const n = this.nudge(p); if (n?.win) this.ui.toast(`🎁 ${p.name} scheme unlocked: ${p.scheme.text}`);
     }
   }
@@ -297,10 +337,21 @@ export class OrderMatrixPage {
     const k = this.kctx(); if (!k) return;
     if (k.mode === 'all') { this.closeKpad(); return; }
     const p = this.products().find(x => x.id === k.pid)!, c = p.colors.find(x => x.id === k.colorId)!;
-    const rest = this.sizes().slice(this.sizes().indexOf(k.size) + 1).find(s => c.stock[s] !== 'STOPPED');
+    const rest = this.sizes().slice(this.sizes().indexOf(k.size) + 1).find(s => this.orderable(c, s));
     if (rest) this.pick(p, c, rest); else this.closeKpad();
   }
   closeKpad() { this.kctx.set(null); this.kval.set(''); }
+
+  toggleDemand() {
+    const on = !this.demand();
+    this.closeKpad();
+    this.store.setDemandMode(on);
+    this.ui.toast(on ? '📝 Demand Order: quantities are captured as a requirement' : 'Back to the stock order');
+  }
+  reviewDemand() {
+    this.closeKpad();
+    this.router.navigateByUrl('/order/demand');
+  }
 
   preview() {
     const short = this.products().filter(p => { const t = this.totals(p).qty; return t > 0 && t < p.moq; });

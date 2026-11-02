@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   visitIndicator, productiveCalls, beatPriority, sortByPriority, visitGroup, stockBand, outletPerformance,
   incentiveFor, priceOrder, exceedsCredit, validateKyc, haversineMeters, samplePadQr, unitPrice,
+  canMoveDemand, planFulfilment, demandStatusAfterFulfil,
 } from '../src/domain/rules.js';
 import { utcRange, addDays, daysBetween, weekday } from '../src/utils/dates.js';
 import { workingDaysUpTo } from '../src/services/targets.js';
@@ -60,9 +61,10 @@ test('incentive slab selection', () => {
 
 const catalog = new Map([
   [1, { productName: 'CARLOS', factoryRate: 555, mrp: 835, moq: 5, hasSleeves: true, halfSleeveFactor: 0.92, schemeBuyQty: 10, schemeFreeQty: 1,
-        colors: new Map([[11, { colorName: 'Walnut', stock: { 36: 'IN_STOCK', 38: 'STOPPED', 40: 'OOS_15' } }]]) }],
+        colors: new Map([[11, { colorName: 'Walnut', stock: { 36: 'IN_STOCK', 38: 'STOPPED', 40: 'OOS_15', 44: 'IN_STOCK' },
+                                qty: { 36: 20, 38: 0, 40: 6, 44: 0 } }]]) }],
   [2, { productName: 'SILK SATIN', factoryRate: 430, mrp: 645, moq: 10, hasSleeves: false, halfSleeveFactor: 0.92,
-        colors: new Map([[21, { colorName: 'Lavender', stock: { 36: 'IN_STOCK' } }]]) }],
+        colors: new Map([[21, { colorName: 'Lavender', stock: { 36: 'IN_STOCK' }, qty: { 36: 30 } }]]) }],
 ]);
 
 test('order pricing: full / half sleeve, scheme free goods, tax, merge duplicate cells', () => {
@@ -89,6 +91,59 @@ test('order pricing rejects stopped cells, MOQ shortfall, half sleeve on fabric,
   assert.throws(() => priceOrder([{ productId: 2, colorId: 21, size: '36', sleeve: 'HALF', qty: 12 }], catalog), /no half sleeve/);
   assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '36', qty: 0 }], catalog), /at least one product/);
   assert.throws(() => priceOrder([{ productId: 9, colorId: 1, size: '36', qty: 5 }], catalog), /Unknown product/);
+});
+
+test('demand pricing accepts only zero-stock cells (stopped, out of stock, unstocked), skips MOQ, still rejects bad input', () => {
+  const opts = { taxRate: 0, demand: true, sizes: ['36', '38', '40', '42', '44'], enforceMoq: false };
+  const q = priceOrder([
+    { productId: 1, colorId: 11, size: '38', qty: 2 },   // stopped, 0 on hand
+    { productId: 1, colorId: 11, size: '44', qty: 1 },   // 0 on hand
+    { productId: 1, colorId: 11, size: '42', qty: 1 },   // no stock record at all
+  ], catalog, opts);
+  assert.deepEqual(q.lines.map(l => l.stockStatus), ['STOPPED', 'IN_STOCK', 'NONE']);
+  assert.equal(q.subTotal, 4 * 555);
+  assert.equal(q.taxAmount, 0);
+  assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '99', qty: 1 }], catalog, opts), /unknown size/);
+  assert.throws(() => priceOrder([{ productId: 2, colorId: 21, size: '36', sleeve: 'HALF', qty: 1 }], catalog, opts), /no half sleeve/);
+  // anything with stock on hand belongs on the stock order
+  assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '40', qty: 1 }], catalog, opts), /has 6 pcs in stock — take it as a stock order/);
+  assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '36', qty: 30 }], catalog, opts), /has 20 pcs in stock/);
+  // regular orders are unchanged
+  assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '42', qty: 6 }], catalog), /unknown size/);
+});
+
+test('demand status transitions and fulfilment planning', () => {
+  assert.equal(canMoveDemand('PENDING', 'APPROVED'), true);
+  assert.equal(canMoveDemand('PENDING', 'PROCESSING'), false);
+  assert.equal(canMoveDemand('APPROVED', 'PROCESSING'), true);
+  assert.equal(canMoveDemand('PARTIALLY_FULFILLED', 'REJECTED'), true);
+  assert.equal(canMoveDemand('FULFILLED', 'REJECTED'), false);
+  assert.equal(canMoveDemand('REJECTED', 'APPROVED'), false);
+
+  const lines = [
+    { id: 1, qty: 10, fulfilledQty: 4, productName: 'CARLOS', colorName: 'Walnut', size: '36', stockStatus: 'IN_STOCK', stockQty: 50 },
+    { id: 2, qty: 5, fulfilledQty: 0, productName: 'CARLOS', colorName: 'Walnut', size: '38', stockStatus: 'STOPPED', stockQty: 0 },
+    { id: 3, qty: 8, fulfilledQty: 0, productName: 'CARLOS', colorName: 'Walnut', size: '40', stockStatus: 'IN_STOCK', stockQty: 3 },
+  ];
+  assert.deepEqual(planFulfilment(lines, [{ lineId: 1, qty: 6 }, { lineId: 3, qty: 0 }]).map(p => [p.line.id, p.qty]), [[1, 6]]);
+  assert.throws(() => planFulfilment(lines, [{ lineId: 1, qty: 7 }]), /only 6 pcs are pending/);
+  assert.throws(() => planFulfilment(lines, [{ lineId: 2, qty: 1 }]), /stopped/);
+  assert.throws(() => planFulfilment(lines, [{ lineId: 3, qty: 4 }]), /only 3 pcs in stock/);
+  assert.throws(() => planFulfilment(lines, [{ lineId: 9, qty: 1 }]), /not part of this demand/);
+  assert.throws(() => planFulfilment(lines, [{ lineId: 1, qty: 0 }]), /at least one line/);
+
+  assert.equal(demandStatusAfterFulfil([{ qty: 10, fulfilledQty: 10 }, { qty: 5, fulfilledQty: 5 }]), 'FULFILLED');
+  assert.equal(demandStatusAfterFulfil([{ qty: 10, fulfilledQty: 10 }, { qty: 5, fulfilledQty: 0 }]), 'PARTIALLY_FULFILLED');
+});
+
+test('stock orders need quantity on hand; full and half sleeve share the stock of a cell', () => {
+  assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '44', qty: 6 }], catalog), /out of stock — use Demand Order/);
+  assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '36', qty: 21 }], catalog), /only 20 pcs in stock/);
+  assert.throws(() => priceOrder([{ productId: 1, colorId: 11, size: '36', sleeve: 'FULL', qty: 15 },
+                                  { productId: 1, colorId: 11, size: '36', sleeve: 'HALF', qty: 6 }], catalog), /only 20 pcs in stock/);
+  assert.equal(priceOrder([{ productId: 1, colorId: 11, size: '36', qty: 20 }], catalog).totalPieces, 20);
+  // the same zero-stock cell is fine on a demand order
+  assert.equal(priceOrder([{ productId: 1, colorId: 11, size: '44', qty: 6 }], catalog, { demand: true, sizes: ['44'], enforceMoq: false }).totalPieces, 6);
 });
 
 test('credit limit check only applies to credit terms', () => {

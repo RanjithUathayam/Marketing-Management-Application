@@ -167,6 +167,7 @@ export class OrderTransportPage {
             <div class="between" style="margin-bottom:9px"><span class="muted">Transport</span><b>{{ o.transport.mode }} · {{ o.transport.transporter }}</b></div>
             <div class="between"><span class="muted">Status</span><app-status-pill [status]="o.status" [sm]="true" /></div>
           </div>
+          @if (demandQty()) { <button class="btn dmd mt14" type="button" (click)="done('/order/demand')">📝 Submit pending demand ({{ demandQty() }} pcs) →</button> }
           <a class="btn ghost mt14" [href]="waLink(o)" target="_blank" rel="noopener">📲 Share to Customer WhatsApp</a>
           <button class="btn ghost mt8" type="button" (click)="done('/orders/' + o.id)">📋 Track in Order Status</button>
           <button class="btn primary mt8" type="button" (click)="done('/home')">← Back to Dashboard</button>
@@ -182,6 +183,8 @@ export class OrderSuccessPage {
   private store = inject(OrderStore);
   o = signal<Order | null>(null);
   elapsed = signal('');
+  /** Pieces in a demand cart that was not submitted yet. */
+  demandQty = signal(0);
   constructor() {
     queueMicrotask(async () => {
       try {
@@ -190,7 +193,8 @@ export class OrderSuccessPage {
         const started = Number(sessionStorage.getItem('mma.orderStart') || 0);
         if (started) { const s = Math.round((Date.now() - started) / 1000); this.elapsed.set(`${Math.floor(s / 60)} min ${s % 60} sec`); }
         this.mobile = this.store.outlet()?.mobile ?? '';
-        this.store.reset();
+        this.store.finishStockOrder();
+        this.demandQty.set(this.store.lines('demand').reduce((s, l) => s + l.qty, 0));
         sessionStorage.removeItem('mma.orderStart');
       } catch { this.router.navigateByUrl('/orders'); }
     });

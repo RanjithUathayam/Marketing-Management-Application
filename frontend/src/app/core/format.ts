@@ -1,5 +1,5 @@
 import { Pipe, PipeTransform } from '@angular/core';
-import { OrderStatus } from './models';
+import { DemandStatus, OrderStatus } from './models';
 
 export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -59,6 +59,20 @@ export const ORDER_STAGES: { k: OrderStatus; lbl: string; short: string; ic: str
   { k: 'DISPATCHED', lbl: 'Dispatched', short: 'Dispatched', ic: '🚚', c: '#ea580c', c2: '#ffedd5', note: 'Handed to transporter' },
   { k: 'COMPLETED', lbl: 'Completed', short: 'Completed', ic: '🏁', c: '#0d6e50', c2: '#dcfce7', note: 'Payment settled · order closed' },
 ];
+/* Demand order workflow: Pending → Approved → Processing → Partially Fulfilled → Fulfilled (or Rejected) */
+export const DEMAND_STAGES: { k: DemandStatus; lbl: string; ic: string; c: string; c2: string; note: string }[] = [
+  { k: 'PENDING', lbl: 'Pending', ic: '📝', c: '#6d28d9', c2: '#ede9fe', note: 'Awaiting manager review' },
+  { k: 'APPROVED', lbl: 'Approved', ic: '✅', c: '#2563eb', c2: '#dbeafe', note: 'Accepted — to be sourced' },
+  { k: 'PROCESSING', lbl: 'Processing', ic: '🏭', c: '#0891b2', c2: '#cffafe', note: 'Being produced or procured' },
+  { k: 'PARTIALLY_FULFILLED', lbl: 'Partially Fulfilled', ic: '📦', c: '#ea580c', c2: '#ffedd5', note: 'Part moved to a regular order' },
+  { k: 'FULFILLED', lbl: 'Fulfilled', ic: '🏁', c: '#0d6e50', c2: '#dcfce7', note: 'All quantities moved to orders' },
+  { k: 'REJECTED', lbl: 'Rejected', ic: '⛔', c: '#b91c1c', c2: '#fee2e2', note: 'Closed without fulfilment' },
+];
+export const demandStage = (s: DemandStatus) => DEMAND_STAGES.find(x => x.k === s) ?? DEMAND_STAGES[0];
+/** Stock label for a demand line cell, including colours/sizes with no stock record. */
+export const demandStockLabel = (s: { status: string; qty: number }) =>
+  s.status === 'NONE' ? 'Not stocked' : `${STOCK_LABEL[s.status]?.replace(/^\S+\s/, '') ?? s.status} · ${s.qty} pcs`;
+
 export const stage = (s: OrderStatus) => ORDER_STAGES.find(x => x.k === s) ?? ORDER_STAGES[0];
 export const stageIdx = (s: OrderStatus) => ORDER_STAGES.findIndex(x => x.k === s);
 

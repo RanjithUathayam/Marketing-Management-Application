@@ -25,7 +25,7 @@ track the team live and monitor targets, beat coverage and sample-pad acknowledg
 │   ├── scripts/             create-db · migrate · seed
 │   └── test/                node:test suites (rules, API, SQL static checks)
 ├── database/
-│   ├── migrations/          001 schema · 002 views & stored procedures · 003 reference data
+│   ├── migrations/          001 schema · 002 views & stored procedures · 003 reference data · 004 face verification · 005 demand orders
 │   └── seed/demo_seed.sql   optional demo data (dates relative to today)
 ├── frontend/                Angular app (src/app/core · shared · features/*)
 └── docs/                    API reference, prototype analysis
@@ -50,7 +50,7 @@ npm run db:seed               # optional: loads demo users, beats, outlets, orde
 ```
 
 Migrations can also be run manually with `sqlcmd -S <server> -d <db> -i database/migrations/001_schema.sql` (in order).
-New schema changes go in a new numbered file (`004_….sql`); applied files are never edited.
+New schema changes go in a new numbered file (`006_….sql`); applied files are never edited.
 
 ## 3. Configuration (`backend/.env`)
 

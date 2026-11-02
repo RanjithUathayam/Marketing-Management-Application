@@ -74,11 +74,39 @@ export interface Order {
   paymentTerms: string; instructions: string | null; signatureUrl: string | null;
   transport: { mode: string; transporter: string; destination: string; deliveryDate: string };
   status: OrderStatus; creditHold: boolean; invoiceNo: string | null; lrNo: string | null; receivedBy: string | null;
+  demandOrderId: number | null; demandNo: string | null;
   log: { status: OrderStatus; at: string; by?: string; note?: string }[];
   products?: { productId: number; name: string; icon: string; qty: number; amount: number; freeQty: number; colors: string[];
     lines: { color: string; hex: string; size: string; sleeve: Sleeve; qty: number; unitPrice: number; amount: number }[] }[];
 }
 export interface OrderList extends Paged<Order> { totalAmount: number; statusCounts: Partial<Record<OrderStatus, number>> }
+
+/* Demand orders: requirements for out-of-stock / stopped / unstocked items. Never reserve stock. */
+export type DemandStatus = 'PENDING' | 'APPROVED' | 'PROCESSING' | 'PARTIALLY_FULFILLED' | 'FULFILLED' | 'REJECTED';
+export interface DemandStock { status: StockStatus | 'NONE'; qty: number }
+export interface DemandLine {
+  id: number; productId: number; productName: string; icon: string; colorId: number; color: string; colorCode: string; hex: string;
+  size: string; sleeve: Sleeve; qty: number; fulfilledQty: number; pendingQty: number; unitPrice: number; amount: number;
+  stockAtOrder: DemandStock; stockNow: DemandStock;
+}
+export interface DemandOrder {
+  id: number; demandNo: string; outletId: number; outletName: string; beatCode: string; beatName: string;
+  userId: number; execName: string; empCode: string; orderedAt: string;
+  totalPieces: number; fulfilledPieces: number; pendingPieces: number; subTotal: number; mrpValue: number; productCount: number;
+  remarks: string | null; expectedBy: string | null; status: DemandStatus;
+  reviewedBy: string | null; reviewedAt: string | null; reviewNote: string | null;
+  log: { status: DemandStatus; at: string; by?: string; note?: string }[];
+  lines?: DemandLine[];
+  orders?: { id: number; orderNo: string; status: OrderStatus; totalPieces: number; totalAmount: number; orderedAt: string }[];
+}
+export interface DemandList extends Paged<DemandOrder> {
+  totals: { pieces: number; fulfilled: number; pending: number; amount: number };
+  statusCounts: Partial<Record<DemandStatus, number>>;
+}
+export interface DemandReportRow {
+  productId: number; productName: string; icon: string; colorId: number; color: string; colorCode: string; hex: string;
+  size: string; sleeve: Sleeve; requested: number; fulfilled: number; pending: number; demands: number; outlets: number; stockNow: DemandStock;
+}
 
 export interface AttendanceToday {
   date: string; dayStarted: boolean; dayEnded: boolean;

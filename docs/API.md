@@ -63,11 +63,28 @@ List endpoints accept `page` and `pageSize` and return `{ items, total, page, pa
 | GET | `/products?tab&search` | Tabs: All, Frequently (ordered by me in 90 days), Offer, New Launch, Must Selling |
 | GET | `/products/by-qr/:code` | Product QR lookup |
 | GET | `/products/matrix?ids=1,2` | Colours × sizes with stock status per cell |
-| POST | `/orders/quote` | `{ outletId, lines[], paymentTerms }` → server pricing (full/half sleeve), scheme free goods, MOQ, stopped-cell check, tax, credit-limit check |
+| POST | `/orders/quote` | `{ outletId, lines[], paymentTerms }` → server pricing (full/half sleeve), scheme free goods, MOQ, stopped-cell check, stock on hand (zero-stock cells refused; pieces per colour × size ≤ quantity on hand — use a demand order otherwise), tax, credit-limit check |
 | POST | `/orders` | Quote fields + `clientRef` (idempotency), `instructions`, `signature` (PNG data URL), `transport {mode, transporter, destination, deliveryDate}`, `lat/lng`. One transaction: order, lines, status log, outlet & beat visit; credit-hold + manager notification when over limit |
 | GET | `/orders?status&search&userId&outletId&from&to` | Scope; includes `statusCounts` and `totalAmount` |
 | GET | `/orders/:id` | Lines grouped by product, status timeline |
 | POST | `/orders/:id/advance` | Manager/admin (or ERP service account): next status RECEIVED → APPROVED → DELIVERED → INVOICED → DISPATCHED → COMPLETED, stamps time, invoice/LR numbers |
+
+## Demand orders
+
+Customer requirements for colour × size cells with zero stock. Stored in `DemandOrders` / `DemandOrderLines`
+(not `Orders`), so they never reserve or reduce stock and never count towards outlet balances, targets or sales reports.
+Workflow: `PENDING → APPROVED → PROCESSING → PARTIALLY_FULFILLED → FULFILLED`, or `REJECTED` from any open status.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/demand-orders` | `{ clientRef, outletId, lines[{productId, colorId, size, sleeve, qty ≥ 1}], remarks?, expectedBy?, lat/lng }`. Only zero-stock cells are accepted (quantity on hand 0 — out of stock, stopped or no stock record); a cell with stock is refused and must go on a stock order. MOQ does not apply. Idempotent on `clientRef`. Returns `DMD-yyyy-nnnn`, status `PENDING`; notifies the manager |
+| GET | `/demand-orders?status&open&search&userId&outletId&productId&from&to&page&pageSize` | Scoped like orders; `totals {pieces, fulfilled, pending, amount}` and `statusCounts` |
+| GET | `/demand-orders/report?…same filters` | Requested / fulfilled / pending pieces per product × colour × size × sleeve with current stock (rejected demands excluded) |
+| GET | `/demand-orders/:id` | Lines (requested, fulfilled, pending, stock at capture and now), fulfilment orders, status log |
+| POST | `/demand-orders/:id/status` | Manager/admin: `{ status: APPROVED \| PROCESSING \| REJECTED, note? }` (note required to reject) |
+| POST | `/demand-orders/:id/fulfil` | Manager/admin, once stock has arrived: `{ clientRef, paymentTerms, lines[{lineId, qty}], note? }`. Qty ≤ pending and ≤ quantity on hand; stopped cells refused. Creates a regular order (`RECEIVED`, linked by `Orders.DemandOrderId`, priced with tax, credit check) for the executive who captured the demand, then sets `PARTIALLY_FULFILLED` / `FULFILLED`. Idempotent on `clientRef` |
+
+`GET /orders` and `/orders/:id` include `demandOrderId` / `demandNo` for orders raised from a demand.
 
 ## Field work
 | Method | Path | Notes |

@@ -14,6 +14,7 @@ import { router as beats } from './modules/beats.routes.js';
 import { router as outlets } from './modules/outlets.routes.js';
 import { router as products } from './modules/products.routes.js';
 import { router as orders } from './modules/orders.routes.js';
+import { router as demand } from './modules/demand.routes.js';
 import { router as field } from './modules/field.routes.js';
 import { router as insights } from './modules/insights.routes.js';
 import { router as samplePads } from './modules/samplepads.routes.js';
@@ -42,7 +43,7 @@ export function createApp() {
   api.use(authenticate);
   api.use('/attendance', attendance);
   api.use('/admin', admin);
-  for (const r of [beats, outlets, products, orders, field, insights, samplePads]) api.use(r);
+  for (const r of [beats, outlets, products, orders, demand, field, insights, samplePads]) api.use(r);
   app.use('/api', api);
 
   app.use(notFoundHandler);

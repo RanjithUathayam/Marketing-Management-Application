@@ -72,7 +72,7 @@ test('order quote prices server-side and flags credit limit', async () => {
     [/FROM dbo.Products WHERE IsActive = 1 AND ProductId IN/, () => [
       [{ ProductId: 1, ProductName: 'CARLOS', FactoryRate: 555, Mrp: 835, Moq: 5, HasSleeves: true, HalfSleeveFactor: 0.92, SchemeBuyQty: 10, SchemeFreeQty: 1 }],
       [{ ColorId: 11, ProductId: 1, ColorName: 'Walnut' }],
-      [{ ColorId: 11, SizeCode: '36', StockStatus: 'IN_STOCK' }, { ColorId: 11, SizeCode: '38', StockStatus: 'STOPPED' }],
+      [{ ColorId: 11, SizeCode: '36', StockStatus: 'IN_STOCK', QtyOnHand: 40 }, { ColorId: 11, SizeCode: '38', StockStatus: 'STOPPED' }],
     ]],
     [/vw_OutletBalance b JOIN dbo.Outlets/, () => [{ Outstanding: 96500, CreditLimit: 80000, OutletName: 'Royal Textiles' }]],
   ]);
