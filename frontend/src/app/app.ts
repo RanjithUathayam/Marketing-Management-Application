@@ -94,8 +94,8 @@ export class App {
   wide = signal(false);
   url = signal('');
   user = this.auth.user;
-  /** Sidebar (desktop only, via CSS) on every signed-in screen except Start Day. */
-  showSide = computed(() => this.auth.isLoggedIn() && !this.url().startsWith('/login') && !this.url().startsWith('/start-day'));
+  /** Sidebar (desktop only, via CSS) on every signed-in screen except Start Day and a phone order taken without sign-in. */
+  showSide = computed(() => this.auth.isLoggedIn() && !this.auth.isPhoneOrder() && !this.url().startsWith('/login') && !this.url().startsWith('/start-day'));
 
   /* Bottom bar (phone / tablet) */
   private execNav: NavItem[] = [
@@ -165,13 +165,13 @@ export class App {
 
   constructor() {
     // Refresh the stored profile so a photo the admin added since sign-in shows up.
-    if (this.auth.isLoggedIn()) this.auth.reloadProfile().catch(() => {});
+    if (this.auth.isLoggedIn() && !this.auth.isPhoneOrder()) this.auth.reloadProfile().catch(() => {});
     window.addEventListener('offline', () => this.online.set(false));
     window.addEventListener('online', () => { this.online.set(true); this.ui.success('✅ Back online'); });
     this.router.events.pipe(filter(e => e instanceof NavigationEnd)).subscribe(() => {
       let s: ActivatedRouteSnapshot = this.router.routerState.snapshot.root;
       while (s.firstChild) s = s.firstChild;
-      this.nav.set(s.data['nav'] ?? null);
+      this.nav.set(this.auth.isPhoneOrder() ? null : s.data['nav'] ?? null);
       this.wide.set(!!s.data['wide']);
       this.url.set(this.router.url);
       this.badges.refresh();

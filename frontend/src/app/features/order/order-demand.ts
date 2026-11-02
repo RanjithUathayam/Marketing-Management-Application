@@ -177,8 +177,13 @@ export class DemandPill {
           </div>
           <div class="tiny mt8">Stock has not been reserved. You will be notified as the demand is approved and fulfilled.</div>
           @if (stockQty) { <button class="btn primary mt14" type="button" (click)="go('/order/matrix')">Continue stock order ({{ stockQty }} pcs) →</button> }
-          <button class="btn ghost mt8" type="button" (click)="go('/demand-orders/' + d.id)">📋 Track demand</button>
-          <button class="btn {{ stockQty ? 'ghost' : 'primary' }} mt8" type="button" (click)="go('/home')">← Back to Dashboard</button>
+          @if (auth.isPhoneOrder()) {
+            <button class="btn ghost mt8" type="button" (click)="go('/outlets')">📞 Take another phone order</button>
+            <button class="btn {{ stockQty ? 'ghost' : 'primary' }} mt8" type="button" (click)="exit()">✓ Done · back to login</button>
+          } @else {
+            <button class="btn ghost mt8" type="button" (click)="go('/demand-orders/' + d.id)">📋 Track demand</button>
+            <button class="btn {{ stockQty ? 'ghost' : 'primary' }} mt8" type="button" (click)="go('/home')">← Back to Dashboard</button>
+          }
         }
       </app-state>
       </div>
@@ -186,6 +191,7 @@ export class DemandPill {
 })
 export class DemandSuccessPage {
   id = input.required<string>();
+  auth = inject(AuthService);
   private api = inject(Api);
   private router = inject(Router);
   private store = inject(OrderStore);
@@ -201,6 +207,8 @@ export class DemandSuccessPage {
     });
   }
   go(url: string) { this.router.navigateByUrl(url); }
+  /** Ends a phone order session started from the login page. */
+  exit() { this.store.reset(); this.auth.logout(); }
 }
 
 /* ── List, filters and pending-quantity tracking ── */

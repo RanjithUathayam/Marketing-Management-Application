@@ -5,10 +5,12 @@ import { AuthService } from '../../core/auth.service';
 import { Api, errorMessage } from '../../core/api.service';
 import { Ui } from '../../core/ui.service';
 import { AttendanceToday } from '../../core/models';
+import { GuestLeaveResult, LeaveSheet } from '../../shared/leave-sheet';
+import { Sheet } from '../../shared/ui.components';
 
 @Component({
   selector: 'app-login',
-  imports: [FormsModule],
+  imports: [FormsModule, LeaveSheet, Sheet],
   host: { class: 'sc' },
   template: `
     <header class="bar grad" style="padding-top:44px;justify-content:center"><div class="btitle" style="text-align:center;flex:none">Marketing Management Application</div></header>
@@ -44,9 +46,39 @@ import { AttendanceToday } from '../../core/models';
           }
           <div class="tiny center mt12">🔒 OTP delivered on SMS + WhatsApp</div>
         </div>
+        <div class="row" style="justify-content:center;gap:10px;flex-wrap:wrap">
+          <button class="pillbtn" type="button" (click)="openLeave()">📝 Apply Leave / Permission</button>
+          <button class="pillbtn" type="button" (click)="openPhone()">📞 Phone Order</button>
+        </div>
+        <div class="tiny center" style="margin-top:-8px">Apply leave or take a phone order without signing in.</div>
         <div class="tiny center">Need help? Call support on 1800-000-123</div>
       </form>
-    </div>`,
+    </div>
+    <app-leave-sheet [(open)]="leaveOpen" [guest]="true" [(mobile)]="leaveMobile" (submitted)="leaveSubmitted($event)" />
+    <app-sheet [(open)]="phoneOpen" heading="📞 Phone Order" subheading="No sign-in needed · order taking only">
+      <div class="no-2col">
+        <div class="fld"><label for="pm">Mobile Number *</label>
+          <input id="pm" name="pm" [ngModel]="phoneMobile" (ngModelChange)="phoneMobile = $event.replace(nonDigit, '')" inputmode="numeric" maxlength="10" autocomplete="tel-national" placeholder="10-digit mobile"></div>
+        <div class="fld"><label for="pe">Employee ID *</label>
+          <input id="pe" name="pe" [(ngModel)]="phoneEmp" maxlength="20" autocapitalize="characters" autocomplete="off" placeholder="e.g. FA-2231"></div>
+      </div>
+      <div class="tiny mb12">Pick the outlet that called, take the order and confirm it with the caller. The session is for order taking only and ends after 30 minutes.</div>
+      <button class="btn primary" type="button" [disabled]="busy()" (click)="startPhone()">
+        @if (busy()) { <span class="spin sm"></span> } Start Phone Order
+      </button>
+    </app-sheet>
+    <app-sheet [(open)]="leaveDoneOpen" heading="📤 Request Submitted" subheading="Waiting for manager approval">
+      @if (leaveDone(); as r) {
+        <div class="card p mb12">
+          <div class="between" style="margin-bottom:8px"><span class="muted">Employee</span><b>{{ r.employeeName }}</b></div>
+          <div class="between" style="margin-bottom:8px"><span class="muted">Request #</span><b>LR-{{ r.id }}</b></div>
+          <div class="between" style="margin-bottom:8px"><span class="muted">Approver</span><b>{{ r.approver || 'Your manager' }}</b></div>
+          <div class="between"><span class="muted">Status</span><span class="chip xs c-amber"><span class="d"></span>Pending</span></div>
+        </div>
+        <div class="tiny mb12">A confirmation has been sent to your mobile on SMS / WhatsApp. You can track the status under Attendance after you sign in.</div>
+        <button class="btn primary" type="button" (click)="leaveDoneOpen.set(false)">Done</button>
+      }
+    </app-sheet>`,
 })
 export class LoginPage implements OnDestroy {
   private auth = inject(AuthService);
@@ -59,6 +91,45 @@ export class LoginPage implements OnDestroy {
   busy = signal(false);
   devOtp = signal<string | null>(null);
   mobileErr = signal('');
+  /** Apply leave without signing in: the employee identifies with mobile + Employee ID (no OTP, no Start Day). */
+  leaveOpen = signal(false);
+  leaveMobile = signal('');
+  leaveDone = signal<GuestLeaveResult | null>(null);
+  leaveDoneOpen = signal(false);
+
+  /** Phone order without signing in: the executive identifies with mobile + Employee ID (no OTP). */
+  phoneOpen = signal(false);
+  phoneMobile = '';
+  phoneEmp = '';
+  nonDigit = /\D/g;
+
+  openPhone() {
+    const m = this.mobile.replace(/\D/g, '');
+    if (m && !this.phoneMobile) this.phoneMobile = m;
+    this.phoneOpen.set(true);
+  }
+  async startPhone() {
+    if (!/^[6-9]\d{9}$/.test(this.phoneMobile)) { this.ui.error('Enter your registered 10-digit mobile number'); return; }
+    if (this.phoneEmp.trim().length < 2) { this.ui.error('Enter your Employee ID'); return; }
+    this.busy.set(true);
+    try {
+      await this.auth.startPhoneOrder(this.phoneMobile, this.phoneEmp.trim());
+      this.phoneOpen.set(false);
+      this.router.navigateByUrl(this.auth.home());
+    } catch (e) { this.ui.error(errorMessage(e)); }
+    finally { this.busy.set(false); }
+  }
+
+  openLeave() {
+    const m = this.mobile.replace(/\D/g, '');
+    if (m && !this.leaveMobile()) this.leaveMobile.set(m);
+    this.leaveOpen.set(true);
+  }
+  leaveSubmitted(r: GuestLeaveResult | void) {
+    if (!r) return;
+    this.leaveDone.set(r);
+    this.leaveDoneOpen.set(true);
+  }
 
   submit() { this.otpSent() ? this.verify() : this.send(); }
 
@@ -82,14 +153,23 @@ export class LoginPage implements OnDestroy {
     if (!/^\d{6}$/.test(this.otp)) { this.ui.error('Enter the 6-digit OTP'); return; }
     this.busy.set(true);
     try {
-      const user = await this.auth.verifyOtp(this.mobile, this.otp);
-      if (user.role === 'EXEC') {
-        const t = await this.api.get<AttendanceToday>('/attendance/today');
-        this.router.navigateByUrl(t.dayStarted ? '/home' : '/start-day');
-      } else this.router.navigateByUrl('/manager');
+      await this.auth.verifyOtp(this.mobile, this.otp);
+      await this.enterApp();
     } catch (e) { this.ui.error(errorMessage(e)); }
     finally { this.busy.set(false); }
   }
+
+  /** Lands the signed-in user: executives go to Start Day until their day has started. */
+  async enterApp() {
+    if (this.auth.role() !== 'EXEC') { this.router.navigateByUrl('/manager'); return; }
+    this.busy.set(true);
+    try {
+      const t = await this.api.get<AttendanceToday>('/attendance/today');
+      this.router.navigateByUrl(t.dayStarted ? '/home' : '/start-day');
+    } catch (e) { this.ui.error(errorMessage(e)); }
+    finally { this.busy.set(false); }
+  }
+
 
   changeNumber() { this.otpSent.set(false); this.otp = ''; this.devOtp.set(null); setTimeout(() => document.getElementById('mobile')?.focus(), 50); }
 

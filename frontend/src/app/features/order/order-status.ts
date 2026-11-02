@@ -41,6 +41,7 @@ import { Badges } from '../../core/badges.service';
               <div class="r"><span>{{ o.productCount }} prod · {{ o.totalPieces }} pcs</span><b class="amt">{{ o.totalAmount | inr }}</b></div></div>
             @if (o.creditHold) { <div class="chip xs c-red mt8">⚠ Credit hold — awaiting approval</div> }
             @if (o.demandNo) { <div class="chip xs c-purple mt8">📝 Fulfils demand {{ o.demandNo }}</div> }
+            @if (o.channel === 'PHONE') { <div class="chip xs c-blue mt8">📞 Phone order</div> }
           </button>
         } @empty { <div class="card p empty">No orders match.</div> }
         </div>
@@ -138,6 +139,10 @@ export class OrderStatusPage {
             <div class="between mt8"><span class="muted">Tax</span><span>{{ o.taxAmount | inr }}</span></div>
             @if (o.transport.mode) { <div class="between mt8"><span class="muted">Delivery</span><span>{{ o.transport.mode }} · {{ o.transport.transporter }} · {{ o.transport.deliveryDate }}</span></div> }
             @if (o.instructions) { <div class="tiny mt8">Note: {{ o.instructions }}</div> }
+            @if (o.channel === 'PHONE') {
+              <div class="between mt8"><span class="muted">Channel</span><span class="chip xs c-blue">📞 Phone order</span></div>
+              @if (o.caller; as c) { <div class="between mt8"><span class="muted">Confirmed by</span><span>{{ c.name }}@if (c.mobile) { · <a [href]="'tel:' + c.mobile">{{ c.mobile }}</a> }</span></div> }
+            }
             @if (o.signatureUrl) { <img [src]="o.signatureUrl" alt="Customer signature" style="max-width:180px;margin-top:10px;border:1px solid var(--brd);border-radius:8px"> }
           </div>
           @if (auth.isManager() && n() < stages.length - 1) {

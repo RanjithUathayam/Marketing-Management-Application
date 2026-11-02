@@ -5,9 +5,11 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { env } from '../config/env.js';
-import { authenticate, signAccessToken } from '../middleware/auth.js';
+import { PHONE_ORDER_SCOPE, authenticate, restrictScope, signAccessToken } from '../middleware/auth.js';
 import { HttpError, badRequest, notFound } from '../utils/http.js';
-import { sendOtp } from '../services/notify.js';
+import { notify, sendOtp, sendSms } from '../services/notify.js';
+import { createLeaveRequest, leaveSchema } from './attendance.routes.js';
+import { logger } from '../utils/logger.js';
 import { securePath } from '../services/face.js';
 
 export const router = Router();
@@ -76,6 +78,61 @@ router.post('/otp/verify', otpLimiter, async (req, res) => {
   res.json(await issueTokens(user));
 });
 
+/* POST /auth/leave-request { mobile, empCode, kind, leaveType, fromDate, toDate, hours?, reason }
+   Apply leave / permission from the login page WITHOUT signing in — for an employee who is not working
+   today. Identity = registered mobile + Employee ID of an active employee. The request is filed as
+   PENDING (the manager still approves it), flagged LOGIN_PAGE, and the employee is alerted on their
+   registered mobile so a request filed by someone else is noticed. */
+const leaveLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: env.isTest ? 1000 : 5, standardHeaders: 'draft-8', legacyHeaders: false,
+  keyGenerator: req => `${ipKeyGenerator(req.ip ?? '')}|${String(req.body?.mobile ?? '').slice(0, 15)}`,
+  message: { error: 'Too many requests. Please try again later or contact your manager.' } });
+
+router.post('/leave-request', leaveLimiter, async (req, res) => {
+  const { mobile, empCode, ...leave } = leaveSchema.extend({
+    mobile: mobileSchema,
+    empCode: z.string().trim().min(2, 'Enter your Employee ID').max(20).transform(s => s.toUpperCase()),
+  }).parse(req.body);
+  const u = await db.one(
+    `SELECT u.UserId, u.FullName, m.FullName AS ManagerName FROM dbo.Users u LEFT JOIN dbo.Users m ON m.UserId = u.ManagerId
+      WHERE u.Mobile = @mobile AND UPPER(u.EmpCode) = @empCode AND u.IsActive = 1`, { mobile, empCode });
+  if (!u) throw badRequest('Mobile number and Employee ID do not match an active employee');
+  const r = await createLeaveRequest({ id: u.UserId, name: u.FullName }, leave, 'LOGIN_PAGE');
+  const kind = leave.kind === 'LEAVE' ? 'Leave' : 'Permission';
+  const dates = `${leave.fromDate}${leave.toDate !== leave.fromDate ? ' to ' + leave.toDate : ''}`;
+  await notify(u.UserId, { icon: '📝', title: `${kind} request submitted`, tone: 'amber', link: '/attendance',
+    body: `${leave.leaveType} · ${dates} · applied from the login page` });
+  await sendSms(mobile, `${kind} request (${leave.leaveType}, ${dates}) was submitted for employee ${empCode}. If you did not make this request, contact your manager.`,
+    'Leave request alert').catch(e => logger.warn({ err: e.message }, 'leave request SMS failed'));
+  res.status(201).json({ id: r.id, status: 'PENDING', employeeName: u.FullName, approver: u.ManagerName ?? null });
+});
+
+/* POST /auth/phone-order-session { mobile, empCode }
+   Take a phone order from the login page WITHOUT OTP sign-in — for an executive who gets a call from an
+   outlet while not signed in. Identity = registered mobile + Employee ID of an active executive. Returns a
+   short-lived access token scoped to order taking only (see restrictScope) and no refresh token. The
+   executive is alerted on their registered mobile so a session opened by someone else is noticed. */
+const PHONE_ORDER_MINUTES = 30;
+const phoneOrderLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: env.isTest ? 1000 : 10, standardHeaders: 'draft-8', legacyHeaders: false,
+  keyGenerator: req => `${ipKeyGenerator(req.ip ?? '')}|${String(req.body?.mobile ?? '').slice(0, 15)}`,
+  message: { error: 'Too many attempts. Please try again later or sign in with OTP.' } });
+
+router.post('/phone-order-session', phoneOrderLimiter, async (req, res) => {
+  const { mobile, empCode } = z.object({
+    mobile: mobileSchema,
+    empCode: z.string().trim().min(2, 'Enter your Employee ID').max(20).transform(s => s.toUpperCase()),
+  }).parse(req.body);
+  const user = await db.one(`${USER_SQL} WHERE u.Mobile = @mobile AND UPPER(u.EmpCode) = @empCode AND u.IsActive = 1`, { mobile, empCode });
+  if (!user) throw badRequest('Mobile number and Employee ID do not match an active employee');
+  if (user.RoleCode !== 'EXEC') throw badRequest('Phone orders without sign-in are for sales executives — please sign in with OTP');
+  const dto = toUserDto(user);
+  await sendSms(mobile, `A phone order session was opened for employee ${empCode} from the login page. If this was not you, contact your manager.`,
+    'Phone order alert').catch(e => logger.warn({ err: e.message }, 'phone order session SMS failed'));
+  res.status(201).json({
+    accessToken: signAccessToken(dto, { scope: PHONE_ORDER_SCOPE, expiresIn: `${PHONE_ORDER_MINUTES}m` }),
+    scope: PHONE_ORDER_SCOPE, expiresInSeconds: PHONE_ORDER_MINUTES * 60, user: dto,
+  });
+});
+
 /* POST /auth/refresh  { refreshToken } — rotates the refresh token */
 router.post('/refresh', async (req, res) => {
   const token = z.string().min(20).parse(req.body?.refreshToken);
@@ -97,14 +154,14 @@ router.post('/logout', async (req, res) => {
   res.status(204).end();
 });
 
-router.get('/me', authenticate, async (req, res) => {
+router.get('/me', authenticate, restrictScope, async (req, res) => {
   const user = await db.one(`${USER_SQL} WHERE u.UserId = @id`, { id: req.user.id });
   if (!user) throw new HttpError(401, 'Account not found');
   res.json(toUserDto(user));
 });
 
 /* GET /auth/me/photo — the signed-in user's own profile photo (added by an admin), for their avatar */
-router.get('/me/photo', authenticate, async (req, res) => {
+router.get('/me/photo', authenticate, restrictScope, async (req, res) => {
   const u = await db.one('SELECT ProfilePhotoPath FROM dbo.Users WHERE UserId = @id', { id: req.user.id });
   const file = securePath(u?.ProfilePhotoPath);
   if (!file) throw notFound('Profile photo');

@@ -13,7 +13,7 @@ export class Badges {
   private lastAt = 0;
 
   async refresh(force = false) {
-    if (!this.auth.isLoggedIn() || (!force && Date.now() - this.lastAt < 20000)) return;
+    if (!this.auth.isLoggedIn() || this.auth.isPhoneOrder() || (!force && Date.now() - this.lastAt < 20000)) return;
     this.lastAt = Date.now();
     try {
       if (this.auth.isManager()) {

@@ -2,9 +2,10 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { Geo } from '../../core/geo.service';
 import { Ui } from '../../core/ui.service';
-import { Beat, Outlet, Paged } from '../../core/models';
+import { Beat, OrderChannel, Outlet, Paged } from '../../core/models';
 import { InrPipe, PERF } from '../../core/format';
 import { AppBar, Sheet, StateView } from '../../shared/ui.components';
 import { OrderStore } from '../order/order.store';
@@ -16,8 +17,12 @@ const REASONS = ['Outlet Closed', 'Owner Absent', 'Competitor Demand', 'Stock Fu
   imports: [FormsModule, RouterLink, AppBar, Sheet, StateView, InrPipe],
   host: { class: 'sc' },
   template: `
-    <app-bar [title]="beat()?.name || 'Outlets'" sub="Assigned outlets · nearest first" fallback="/work">
-      <button class="bico" type="button" routerLink="/outlets/new" aria-label="New outlet">＋</button>
+    <app-bar [title]="beat()?.name || 'Outlets'" [back]="!auth.isPhoneOrder()" [sub]="mode() === 'phone' ? 'Phone order · pick the outlet' : 'Assigned outlets · nearest first'" fallback="/work">
+      @if (auth.isPhoneOrder()) {
+        <button class="bico" type="button" (click)="exit()" aria-label="Exit phone order" title="Exit">✕</button>
+      } @else {
+        <button class="bico" type="button" routerLink="/outlets/new" aria-label="New outlet">＋</button>
+      }
     </app-bar>
     <div class="loc-bar" [class.green]="!!geo.last()" [class.grey]="!geo.last()">
       <span>📍</span><span class="loc-txt">{{ geo.last() ? 'Location active · sorted by distance' : geo.denied() ? 'Location permission denied — sorted by name' : 'Getting your location…' }}</span><span class="loc-dot"></span>
@@ -36,8 +41,11 @@ const REASONS = ['Outlet Closed', 'Owner Absent', 'Competitor Demand', 'Stock Fu
       <span><span class="pin" style="background:#ca8a04"></span>Recent</span><span><span class="pin" style="background:#16a34a"></span>On track</span>
     </div>
     <div class="body pad">
-      @if (task()) { <div class="pc-good">👉 <span>Choose an outlet for <b>{{ task() === 'payment' ? 'payment collection' : 'market survey' }}</b>.</span></div> }
-      @if (outlets().length && !task()) {
+      @if (mode() === 'phone') {
+        <div class="pc-good" style="background:#dbeafe;border-color:#bfdbfe;color:#1e3a8a">📞 <span>Choose the outlet that called. <b>Phone orders</b> need no visit or signature — the caller confirms the order instead.</span></div>
+        @if (auth.isPhoneOrder()) { <div class="tiny mb12">Taking orders as <b>{{ auth.user()?.name }}</b> · {{ auth.user()?.empCode }} without sign-in. Tap ✕ when done.</div> }
+      } @else if (mode()) { <div class="pc-good">👉 <span>Choose an outlet for <b>{{ mode() === 'payment' ? 'payment collection' : 'market survey' }}</b>.</span></div> }
+      @if (outlets().length && !mode()) {
         <div class="card p mb12">
           <div class="between"><b style="font-size:13px">{{ visitedCount() }} of {{ outlets().length }} visited today</b>
             <button type="button" class="pillbtn" [class.on]="hideDone()" [attr.aria-pressed]="hideDone()" (click)="hideDone.set(!hideDone())">{{ hideDone() ? 'Show all' : 'Hide visited' }}</button></div>
@@ -79,6 +87,7 @@ const REASONS = ['Outlet Closed', 'Owner Absent', 'Competitor Demand', 'Stock Fu
           <button type="button" class="qa" (click)="order(o)"><div class="qaic" style="background:var(--g2)">📦</div><div class="qal">Order Taking</div></button>
           <button type="button" class="qa" (click)="go('/survey', o)"><div class="qaic" style="background:var(--g2)">📋</div><div class="qal">Market Survey</div></button>
           <button type="button" class="qa" (click)="go('/payment', o)"><div class="qaic" style="background:var(--g2)">💰</div><div class="qal">Payment Collection</div></button>
+          <button type="button" class="qa" (click)="order(o, 'PHONE')"><div class="qaic" style="background:#dbeafe">☎️</div><div class="qal">Phone Order</div></button>
           <a class="qa" [href]="'tel:' + o.mobile"><div class="qaic" style="background:var(--g2)">📞</div><div class="qal">Call Owner</div></a>
         </div>
         <button class="btn ghost sm mt14" style="width:100%" type="button" (click)="remarkOpen.set(true); sheetOpen.set(false)">✕ No order — add remark</button>
@@ -97,6 +106,9 @@ export class OutletsPage {
   beatId = input<string>();
   task = input<string>();
   geo = inject(Geo);
+  auth = inject(AuthService);
+  /** A phone order session (no sign-in) is always picking an outlet for a phone order. */
+  mode = computed(() => (this.auth.isPhoneOrder() ? 'phone' : this.task()));
   private api = inject(Api);
   private ui = inject(Ui);
   private router = inject(Router);
@@ -140,12 +152,15 @@ export class OutletsPage {
     finally { this.loading.set(false); }
   }
   openOutlet(o: Outlet) {
-    if (this.task() === 'payment') return this.go('/payment', o);
-    if (this.task() === 'survey') return this.go('/survey', o);
+    if (this.mode() === 'payment') return this.go('/payment', o);
+    if (this.mode() === 'survey') return this.go('/survey', o);
+    if (this.mode() === 'phone') return this.order(o, 'PHONE');
     this.cur.set(o); this.sheetOpen.set(true);
   }
+  /** Ends a phone order session started from the login page. */
+  exit() { this.orders.reset(); this.auth.logout(); }
   go(path: string, o: Outlet) { this.sheetOpen.set(false); this.router.navigate([path, o.id]); }
-  order(o: Outlet) { this.sheetOpen.set(false); this.orders.start(o); this.router.navigateByUrl('/order'); }
+  order(o: Outlet, channel: OrderChannel = 'VISIT') { this.sheetOpen.set(false); this.orders.start(o, channel); this.router.navigateByUrl('/order'); }
   async saveRemark() {
     if (!this.reason()) { this.ui.error('Choose a reason'); return; }
     this.busy.set(true);

@@ -167,7 +167,8 @@ router.get('/leaves', authorize(...MANAGERS), async (req, res) => {
   const rows = await db.query(`SELECT x.*, u.FullName FROM dbo.LeaveRequests x JOIN dbo.Users u ON u.UserId = x.UserId
      WHERE x.Status = @status AND x.UserId <> @me AND ${scope} ORDER BY x.CreatedAt`, params);
   res.json(rows.map(r => ({ id: r.LeaveRequestId, userId: r.UserId, userName: r.FullName, kind: r.RequestKind, leaveType: r.LeaveType,
-    fromDate: toIso(r.FromDate), toDate: toIso(r.ToDate), hours: r.Hours, reason: r.Reason, status: r.Status, createdAt: r.CreatedAt })));
+    fromDate: toIso(r.FromDate), toDate: toIso(r.ToDate), hours: r.Hours, reason: r.Reason, status: r.Status, createdAt: r.CreatedAt,
+    appliedVia: r.AppliedVia ?? 'APP' })));
 });
 router.get('/regularizations', authorize(...MANAGERS), async (req, res) => {
   const params = { me: req.user.id, status: req.query.status || 'PENDING' };

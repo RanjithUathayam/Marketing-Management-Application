@@ -58,7 +58,7 @@ interface Recent { kind: string; id: number; userName: string; title: string; st
           @for (l of leaves(); track l.id) {
             <button type="button" class="lrow" (click)="open('leave', l)">
               <div class="av" style="background:#7c3aed">{{ ini(l.userName || '?') }}</div>
-              <div class="lr-main"><b>{{ l.userName }} · {{ l.kind === 'LEAVE' ? 'Leave' : 'Permission' }}</b><span>{{ l.leaveType }} · {{ l.fromDate | d }}{{ l.toDate !== l.fromDate ? ' – ' + (l.toDate | d) : '' }}</span></div>
+              <div class="lr-main"><b>{{ l.userName }} · {{ l.kind === 'LEAVE' ? 'Leave' : 'Permission' }}</b><span>{{ l.leaveType }} · {{ l.fromDate | d }}{{ l.toDate !== l.fromDate ? ' – ' + (l.toDate | d) : '' }}@if (l.appliedVia === 'LOGIN_PAGE') { · <b style="display:inline;font-size:11px;color:#b45309">applied without sign-in</b> }</span></div>
               <span class="chip xs c-grey"><span class="d"></span>Leave</span></button>
           }
           @for (r of regs(); track r.id) {
@@ -107,7 +107,8 @@ interface Recent { kind: string; id: number; userName: string; title: string; st
                 <div class="fld"><label for="ocl">Credit limit (₹)</label><input id="ocl" type="number" min="0" [(ngModel)]="creditLimit"></div></div>
             }
           }
-          @case ('leave') { @if (asLeave(c.item); as l) { <div class="card p mb12"><div class="muted">Reason: {{ l.reason }}</div>@if (l.hours) { <div class="tiny">{{ l.hours }} hours</div> }</div> } }
+          @case ('leave') { @if (asLeave(c.item); as l) { <div class="card p mb12"><div class="muted">Reason: {{ l.reason }}</div>@if (l.hours) { <div class="tiny">{{ l.hours }} hours</div> }
+            @if (l.appliedVia === 'LOGIN_PAGE') { <div class="pc-alert mt8" style="margin-bottom:0">⚠ <span>Applied from the login page without signing in (mobile + Employee ID). Confirm with the employee if anything looks unusual.</span></div> }</div> } }
           @case ('regularization') { @if (asReg(c.item); as r) { <div class="card p mb12"><div class="muted">{{ r.reason }}</div></div> } }
         }
         <div class="fld"><label for="ar">Remarks <span class="tiny">(required to reject)</span></label><textarea id="ar" [(ngModel)]="remark" maxlength="300" placeholder="Optional note…"></textarea></div>

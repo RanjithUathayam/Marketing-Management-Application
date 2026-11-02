@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { Api } from '../../core/api.service';
-import { DemandOrder, Matrix, MatrixProduct, Order, OrderLineInput, Outlet, Quote, Sleeve } from '../../core/models';
+import { DemandOrder, Matrix, MatrixProduct, Order, OrderChannel, OrderLineInput, Outlet, Quote, Sleeve } from '../../core/models';
 import { todayIso } from '../../core/format';
 
 const KEY = 'mma.cart';
@@ -14,9 +14,11 @@ interface Persisted {
   transport: { mode: 'Lorry' | 'Van' | 'Bus'; transporter: string; destination: string; deliveryDate: string; immediate: boolean };
   /** Demand order — kept apart from `qty` so it never mixes with the stock order. */
   demand: Record<string, number>; demandMode: boolean; demandRef: string; demandRemarks: string; demandBy: string;
+  /** PHONE: the order is taken over a call — the caller confirms it instead of signing. */
+  channel: OrderChannel; caller: { name: string; mobile: string; confirmed: boolean };
 }
-const fresh = (outlet: Outlet | null = null): Persisted => ({
-  outlet, selected: [], qty: {}, sleeve: {}, terms: 'CREDIT', instructions: '', clientRef: crypto.randomUUID(),
+const fresh = (outlet: Outlet | null = null, channel: OrderChannel = 'VISIT'): Persisted => ({
+  outlet, channel, caller: { name: outlet?.owner ?? '', mobile: outlet?.mobile ?? '', confirmed: false }, selected: [], qty: {}, sleeve: {}, terms: 'CREDIT', instructions: '', clientRef: crypto.randomUUID(),
   transport: { mode: 'Lorry', transporter: '', destination: outlet?.area ?? '', deliveryDate: todayIso(), immediate: true },
   demand: {}, demandMode: false, demandRef: crypto.randomUUID(), demandRemarks: '', demandBy: '',
 });
@@ -34,6 +36,7 @@ export class OrderStore {
   readonly selected = computed(() => new Set(this.s().selected));
   readonly state = this.s.asReadonly();
   readonly demandMode = computed(() => this.s().demandMode);
+  readonly isPhone = computed(() => this.s().channel === 'PHONE');
 
   constructor() {
     effect(() => { try { sessionStorage.setItem(KEY, JSON.stringify(this.s())); } catch { /* ignore */ } });
@@ -43,8 +46,8 @@ export class OrderStore {
   }
   private patch(p: Partial<Persisted>) { this.s.update(s => ({ ...s, ...p })); }
 
-  start(outlet: Outlet) {
-    this.s.set(fresh(outlet)); this.matrix.set(null); this.quote.set(null); this.signature = '';
+  start(outlet: Outlet, channel: OrderChannel = 'VISIT') {
+    this.s.set(fresh(outlet, channel)); this.matrix.set(null); this.quote.set(null); this.signature = '';
     try { sessionStorage.setItem('mma.orderStart', String(Date.now())); } catch { /* ignore */ }
   }
   reset() { this.s.set(fresh()); this.matrix.set(null); this.quote.set(null); this.signature = ''; }
@@ -52,7 +55,7 @@ export class OrderStore {
   finishStockOrder() {
     const s = this.s();
     if (!Object.keys(s.demand).length) { this.reset(); return; }
-    this.s.set({ ...fresh(s.outlet), selected: s.selected, sleeve: s.sleeve,
+    this.s.set({ ...fresh(s.outlet, s.channel), selected: s.selected, sleeve: s.sleeve,
       demand: s.demand, demandMode: true, demandRef: s.demandRef, demandRemarks: s.demandRemarks, demandBy: s.demandBy });
     this.quote.set(null); this.signature = '';
   }
@@ -94,6 +97,12 @@ export class OrderStore {
   setTerms(t: Persisted['terms']) { this.patch({ terms: t }); }
   setInstructions(v: string) { this.patch({ instructions: v }); }
   setTransport(t: Partial<Persisted['transport']>) { this.patch({ transport: { ...this.s().transport, ...t } }); }
+  setCaller(c: Partial<Persisted['caller']>) { this.patch({ caller: { ...this.s().caller, ...c } }); }
+  /** The customer has confirmed the order: signed it at the outlet, or confirmed it on the call. */
+  confirmed() {
+    const c = this.s().caller;
+    return this.isPhone() ? c.confirmed && c.name.trim().length >= 2 : !!this.signature;
+  }
 
   setDemandMode(on: boolean) { this.patch({ demandMode: on }); }
   setDemandRemarks(v: string) { this.patch({ demandRemarks: v }); }
@@ -160,7 +169,9 @@ export class OrderStore {
     const s = this.s();
     return this.api.post<Order>('/orders', {
       clientRef: s.clientRef, outletId: s.outlet!.id, lines: this.lines(), paymentTerms: s.terms,
-      instructions: s.instructions.trim() || undefined, signature: this.signature || undefined,
+      instructions: s.instructions.trim() || undefined, channel: s.channel,
+      signature: s.channel === 'VISIT' ? this.signature || undefined : undefined,
+      caller: s.channel === 'PHONE' ? { name: s.caller.name.trim(), mobile: s.caller.mobile.trim() || undefined } : undefined,
       transport: { mode: s.transport.mode, transporter: s.transport.transporter.trim(), destination: s.transport.destination.trim(),
                    deliveryDate: s.transport.immediate ? todayIso() : s.transport.deliveryDate },
       lat, lng,

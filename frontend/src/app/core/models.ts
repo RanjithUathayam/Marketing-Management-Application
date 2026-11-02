@@ -67,11 +67,14 @@ export interface Quote {
   credit: { outstanding: number; creditLimit: number; exceeds: boolean };
 }
 export type OrderStatus = 'RECEIVED' | 'APPROVED' | 'DELIVERED' | 'INVOICED' | 'DISPATCHED' | 'COMPLETED';
+export type OrderChannel = 'VISIT' | 'PHONE';
 export interface Order {
   id: number; orderNo: string; outletId: number; outletName: string; beatCode: string; beatName: string;
   userId: number; execName: string; empCode: string; orderedAt: string;
   subTotal: number; mrpValue: number; schemeValue: number; taxAmount: number; totalAmount: number; totalPieces: number; productCount: number;
   paymentTerms: string; instructions: string | null; signatureUrl: string | null;
+  /** VISIT: taken at the outlet (customer signature). PHONE: taken over a call (caller recorded instead). */
+  channel: OrderChannel; caller: { name: string; mobile: string | null } | null;
   transport: { mode: string; transporter: string; destination: string; deliveryDate: string };
   status: OrderStatus; creditHold: boolean; invoiceNo: string | null; lrNo: string | null; receivedBy: string | null;
   demandOrderId: number | null; demandNo: string | null;
@@ -115,7 +118,9 @@ export interface AttendanceToday {
   sessions: { SessionId: number; CheckInAt: string; CheckOutAt: string | null }[];
 }
 export interface LeaveRequest { id: number; kind: string; leaveType: string; fromDate: string; toDate: string; reason: string; status: string;
-  managerRemark?: string | null; createdAt: string; userId?: number; userName?: string; hours?: number | null }
+  managerRemark?: string | null; createdAt: string; userId?: number; userName?: string; hours?: number | null;
+  /** LOGIN_PAGE: applied without signing in (mobile + Employee ID only). */
+  appliedVia?: 'APP' | 'LOGIN_PAGE' }
 export interface Regularization { id: number; date: string; reason: string; status: string; managerRemark?: string | null; userName?: string }
 export interface AttendanceCalendar {
   year: number; month: number; days: { day: number; date: string; status: 'present' | 'late' | 'leave' | 'absent' | 'off' | null }[];

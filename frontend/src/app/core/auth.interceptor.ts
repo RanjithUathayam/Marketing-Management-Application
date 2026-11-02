@@ -11,7 +11,7 @@ const withToken = (req: HttpRequest<unknown>, token: string | null) =>
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const auth = inject(AuthService);
   const router = inject(Router);
-  if (/\/auth\/(otp|refresh|logout)/.test(req.url)) return next(req);
+  if (/\/auth\/(otp|refresh|logout|phone-order-session)/.test(req.url)) return next(req);
   return next(withToken(req, auth.accessToken)).pipe(
     catchError((err: HttpErrorResponse) => {
       if (err.status !== 401) return throwError(() => err);

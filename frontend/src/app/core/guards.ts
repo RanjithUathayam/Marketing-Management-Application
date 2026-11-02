@@ -13,10 +13,12 @@ export const guestGuard: CanActivateFn = () => {
   return auth.isLoggedIn() ? inject(Router).parseUrl(auth.home()) : true;
 };
 
-/** Route data: { roles: Role[] }. The API enforces the same rules server-side. */
+/** Route data: { roles: Role[], phone?: true }. A phone order session (no OTP) only opens routes marked phone.
+    The API enforces the same rules server-side. */
 export const roleGuard: CanActivateFn = route => {
   const auth = inject(AuthService);
   const roles = (route.data['roles'] ?? []) as Role[];
   const role = auth.role();
-  return role && roles.includes(role) ? true : inject(Router).parseUrl(auth.home());
+  const allowed = role && roles.includes(role) && (!auth.isPhoneOrder() || route.data['phone'] === true);
+  return allowed ? true : inject(Router).parseUrl(auth.home());
 };

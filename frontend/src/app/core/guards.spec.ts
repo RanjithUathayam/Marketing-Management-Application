@@ -6,9 +6,11 @@ import { authGuard, roleGuard } from './guards';
 
 const session = (role: string) =>
   localStorage.setItem('mma.session', JSON.stringify({ accessToken: 'a', refreshToken: 'r', user: { id: 1, name: 'X', role, empCode: 'E', mobile: '9', manager: null } }));
-const snap = (roles: string[]) => ({ data: { roles } }) as unknown as ActivatedRouteSnapshot;
-const run = (g: typeof roleGuard, roles: string[] = []) =>
-  TestBed.runInInjectionContext(() => g(snap(roles), {} as RouterStateSnapshot));
+const phoneSession = () =>
+  localStorage.setItem('mma.session', JSON.stringify({ accessToken: 'a', refreshToken: null, scope: 'PHONE_ORDER', user: { id: 1, name: 'X', role: 'EXEC', empCode: 'E', mobile: '9', manager: null } }));
+const snap = (roles: string[], phone = false) => ({ data: { roles, phone } }) as unknown as ActivatedRouteSnapshot;
+const run = (g: typeof roleGuard, roles: string[] = [], phone = false) =>
+  TestBed.runInInjectionContext(() => g(snap(roles, phone), {} as RouterStateSnapshot));
 
 describe('route guards', () => {
   beforeEach(() => {
@@ -27,5 +29,10 @@ describe('route guards', () => {
   it('sends managers to the manager console', () => {
     session('MANAGER');
     expect((run(roleGuard, ['EXEC']) as UrlTree).toString()).toBe('/manager');
+  });
+  it('keeps a phone order session (no sign-in) inside the phone order routes', () => {
+    phoneSession();
+    expect(run(roleGuard, ['EXEC'], true)).toBe(true);
+    expect((run(roleGuard, ['EXEC']) as UrlTree).toString()).toBe('/outlets?task=phone');
   });
 });

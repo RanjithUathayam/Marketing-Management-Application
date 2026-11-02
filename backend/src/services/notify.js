@@ -15,16 +15,19 @@ export async function managerOf(userId, tx) {
   return r?.ManagerId ?? null;
 }
 
-/** Sends an OTP over SMS + WhatsApp through the configured gateway; logs it when no gateway is set. */
-export async function sendOtp(mobile, otp) {
+/** Sends a message over SMS + WhatsApp through the configured gateway; logs it when no gateway is set. */
+export async function sendSms(mobile, message, what = 'SMS') {
   if (!env.smsGatewayUrl) {
-    logger.info({ mobile: mobile.replace(/\d(?=\d{3})/g, '•') }, 'OTP generated (no SMS gateway configured)');
+    logger.info({ mobile: mobile.replace(/\d(?=\d{3})/g, '•') }, `${what} (no SMS gateway configured)`);
     return;
   }
   const res = await fetch(env.smsGatewayUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${env.smsGatewayToken}` },
-    body: JSON.stringify({ to: mobile, channels: ['sms', 'whatsapp'], message: `Your Marketing Management login OTP is ${otp}. Valid for ${Math.round(env.otpTtlSeconds / 60)} minutes.` }),
+    body: JSON.stringify({ to: mobile, channels: ['sms', 'whatsapp'], message }),
   });
   if (!res.ok) throw new Error(`SMS gateway responded ${res.status}`);
 }
+
+export const sendOtp = (mobile, otp) => sendSms(mobile,
+  `Your Marketing Management login OTP is ${otp}. Valid for ${Math.round(env.otpTtlSeconds / 60)} minutes.`, 'OTP generated');

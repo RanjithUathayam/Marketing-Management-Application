@@ -228,27 +228,35 @@ router.post('/regularizations', async (req, res) => {
   res.status(201).json(r);
 });
 
+export const leaveSchema = z.object({
+  kind: z.enum(['LEAVE', 'PERMISSION']),
+  leaveType: z.string().trim().min(2).max(40),
+  fromDate: z.iso.date(), toDate: z.iso.date(),
+  hours: optNum, reason: z.string().trim().min(3, 'Enter a reason').max(400),
+});
+
 /* POST /attendance/leaves { kind, leaveType, fromDate, toDate, hours?, reason } — present & future dates only */
 router.post('/leaves', async (req, res) => {
-  const b = z.object({
-    kind: z.enum(['LEAVE', 'PERMISSION']),
-    leaveType: z.string().trim().min(2).max(40),
-    fromDate: z.iso.date(), toDate: z.iso.date(),
-    hours: optNum, reason: z.string().trim().min(3, 'Enter a reason').max(400),
-  }).parse(req.body);
+  res.status(201).json(await createLeaveRequest(req.user, leaveSchema.parse(req.body)));
+});
+
+/** Validates and files a leave / permission request for `user` ({ id, name }) and notifies their manager.
+    `via` is LOGIN_PAGE when filed without signing in (see POST /auth/leave-request). */
+export async function createLeaveRequest(user, b, via = 'APP') {
   if (b.fromDate < localDate()) throw badRequest('Requests can only be for today or future dates');
   if (b.toDate < b.fromDate) throw badRequest('"To" date must be on or after "From" date');
   if (b.kind === 'PERMISSION' && (b.fromDate !== b.toDate || !(b.hours > 0 && b.hours <= 4)))
     throw badRequest('Permission is for a single day, up to 4 hours');
   const overlap = await db.one(
     `SELECT TOP 1 1 AS x FROM dbo.LeaveRequests WHERE UserId = @u AND Status <> 'REJECTED' AND RequestKind = 'LEAVE' AND @kind = 'LEAVE'
-       AND FromDate <= @to AND ToDate >= @from`, { u: req.user.id, from: b.fromDate, to: b.toDate, kind: b.kind });
+       AND FromDate <= @to AND ToDate >= @from`, { u: user.id, from: b.fromDate, to: b.toDate, kind: b.kind });
   if (overlap) throw conflict('You already have a leave request for these dates');
   const r = await db.one(
-    `INSERT dbo.LeaveRequests (UserId, RequestKind, LeaveType, FromDate, ToDate, Hours, Reason)
-     OUTPUT inserted.LeaveRequestId AS id VALUES (@u, @kind, @type, @from, @to, @hours, @reason)`,
-    { u: req.user.id, kind: b.kind, type: b.leaveType, from: b.fromDate, to: b.toDate, hours: b.hours ?? null, reason: b.reason });
-  await notify(await managerOf(req.user.id), { icon: '📝', title: `${b.kind === 'LEAVE' ? 'Leave' : 'Permission'} request`,
-    body: `${req.user.name} · ${b.leaveType} · ${b.fromDate}${b.toDate !== b.fromDate ? ' – ' + b.toDate : ''}`, tone: 'amber', link: '/manager/approvals' });
-  res.status(201).json(r);
-});
+    `INSERT dbo.LeaveRequests (UserId, RequestKind, LeaveType, FromDate, ToDate, Hours, Reason, AppliedVia)
+     OUTPUT inserted.LeaveRequestId AS id VALUES (@u, @kind, @type, @from, @to, @hours, @reason, @via)`,
+    { u: user.id, kind: b.kind, type: b.leaveType, from: b.fromDate, to: b.toDate, hours: b.hours ?? null, reason: b.reason, via });
+  await notify(await managerOf(user.id), { icon: '📝', title: `${b.kind === 'LEAVE' ? 'Leave' : 'Permission'} request`,
+    body: `${user.name} · ${b.leaveType} · ${b.fromDate}${b.toDate !== b.fromDate ? ' – ' + b.toDate : ''}${via === 'LOGIN_PAGE' ? ' · applied without sign-in' : ''}`,
+    tone: 'amber', link: '/manager/approvals' });
+  return r;
+}

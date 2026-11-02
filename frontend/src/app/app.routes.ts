@@ -4,6 +4,8 @@ import { authGuard, guestGuard, roleGuard } from './core/guards';
 const EXEC = { roles: ['EXEC'] };
 const MGR = { roles: ['MANAGER', 'ADMIN'] };
 const exec = (nav: string | null) => ({ ...EXEC, nav });
+/** Also open to a phone order session started from the login page without OTP. */
+const phone = (nav: string | null) => ({ ...exec(nav), phone: true });
 const mgr = (nav: string | null, wide = false) => ({ ...MGR, nav, wide });
 const any = (nav: string | null) => ({ roles: ['EXEC', 'MANAGER', 'ADMIN'], nav });
 
@@ -22,15 +24,15 @@ export const routes: Routes = [
       { path: 'route/build', data: exec('route'), loadComponent: () => import('./features/exec/route-plan').then(m => m.RouteBuildPage) },
       { path: 'route/review', data: exec('route'), loadComponent: () => import('./features/exec/route-plan').then(m => m.RouteReviewPage) },
       { path: 'route/status', data: exec('route'), loadComponent: () => import('./features/exec/route-plan').then(m => m.RouteStatusPage) },
-      { path: 'outlets', data: exec('work'), loadComponent: () => import('./features/exec/outlets').then(m => m.OutletsPage) },
+      { path: 'outlets', data: phone('work'), loadComponent: () => import('./features/exec/outlets').then(m => m.OutletsPage) },
       { path: 'outlets/new', data: exec('work'), loadComponent: () => import('./features/exec/new-outlet').then(m => m.NewOutletPage) },
-      { path: 'order', data: exec(null), loadComponent: () => import('./features/order/order-select').then(m => m.OrderSelectPage) },
-      { path: 'order/matrix', data: exec(null), loadComponent: () => import('./features/order/order-matrix').then(m => m.OrderMatrixPage) },
-      { path: 'order/summary', data: exec(null), loadComponent: () => import('./features/order/order-checkout').then(m => m.OrderSummaryPage) },
-      { path: 'order/transport', data: exec(null), loadComponent: () => import('./features/order/order-checkout').then(m => m.OrderTransportPage) },
-      { path: 'order/success/:id', data: exec(null), loadComponent: () => import('./features/order/order-checkout').then(m => m.OrderSuccessPage) },
-      { path: 'order/demand', data: exec(null), loadComponent: () => import('./features/order/order-demand').then(m => m.DemandReviewPage) },
-      { path: 'order/demand/success/:id', data: exec(null), loadComponent: () => import('./features/order/order-demand').then(m => m.DemandSuccessPage) },
+      { path: 'order', data: phone(null), loadComponent: () => import('./features/order/order-select').then(m => m.OrderSelectPage) },
+      { path: 'order/matrix', data: phone(null), loadComponent: () => import('./features/order/order-matrix').then(m => m.OrderMatrixPage) },
+      { path: 'order/summary', data: phone(null), loadComponent: () => import('./features/order/order-checkout').then(m => m.OrderSummaryPage) },
+      { path: 'order/transport', data: phone(null), loadComponent: () => import('./features/order/order-checkout').then(m => m.OrderTransportPage) },
+      { path: 'order/success/:id', data: phone(null), loadComponent: () => import('./features/order/order-checkout').then(m => m.OrderSuccessPage) },
+      { path: 'order/demand', data: phone(null), loadComponent: () => import('./features/order/order-demand').then(m => m.DemandReviewPage) },
+      { path: 'order/demand/success/:id', data: phone(null), loadComponent: () => import('./features/order/order-demand').then(m => m.DemandSuccessPage) },
       { path: 'orders', data: any('orders'), loadComponent: () => import('./features/order/order-status').then(m => m.OrderStatusPage) },
       { path: 'orders/:id', data: any(null), loadComponent: () => import('./features/order/order-status').then(m => m.OrderDetailPage) },
       { path: 'demand-orders', data: any('demand'), loadComponent: () => import('./features/order/order-demand').then(m => m.DemandListPage) },

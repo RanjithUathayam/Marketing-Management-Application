@@ -2,6 +2,7 @@ import { Component, inject, input, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { Geo } from '../../core/geo.service';
 import { Ui } from '../../core/ui.service';
 import { Order, OrderList, Quote } from '../../core/models';
@@ -16,7 +17,11 @@ import { OrderStore } from './order.store';
   host: { class: 'sc' },
   template: `
     <app-bar title="Order Summary" [sub]="store.outlet()?.name" fallback="/order/matrix" />
-    <div class="loc-bar green"><span>📍</span><span class="loc-txt">{{ store.outlet()?.name }}, {{ store.outlet()?.area }}</span><span class="loc-dot"></span></div>
+    @if (store.isPhone()) {
+      <div class="loc-bar phone"><span>📞</span><span class="loc-txt">Phone order · {{ store.outlet()?.name }}, {{ store.outlet()?.area }}</span><span>No visit needed</span></div>
+    } @else {
+      <div class="loc-bar green"><span>📍</span><span class="loc-txt">{{ store.outlet()?.name }}, {{ store.outlet()?.area }}</span><span class="loc-dot"></span></div>
+    }
     <div class="body pad narrow">
       <app-state [loading]="!q() && !err()" [error]="err()" (retry)="load()">
         @if (q(); as q) {
@@ -42,9 +47,26 @@ import { OrderStore } from './order.store';
             <div class="fld mt12" style="margin-bottom:0"><label for="si">Special Instructions</label>
               <textarea id="si" [ngModel]="store.state().instructions" (ngModelChange)="store.setInstructions($event)" maxlength="500" placeholder="Optional…"></textarea></div>
           </div>
-          <div class="sec-title">Customer Signature</div>
-          <div class="card p"><app-signature (changed)="store.signature = $event; signed.set(!!$event)" />
-            @if (!signed()) { <div class="tiny mt8">Ask the outlet owner to sign above to confirm the order.</div> }</div>
+          @if (store.isPhone()) {
+            <div class="sec-title">Call Confirmation</div>
+            <div class="card p">
+              <div class="no-2col">
+                <div class="fld"><label for="cn">Confirmed by *</label>
+                  <input id="cn" [ngModel]="store.state().caller.name" (ngModelChange)="store.setCaller({ name: $event })" maxlength="80" placeholder="Name of the caller" autocomplete="off"></div>
+                <div class="fld"><label for="cm">Caller mobile</label>
+                  <input id="cm" [ngModel]="store.state().caller.mobile" (ngModelChange)="store.setCaller({ mobile: $event.replace(nonDigit, '') })" inputmode="numeric" maxlength="10" placeholder="10-digit mobile"></div>
+              </div>
+              <label class="row" style="gap:9px;align-items:flex-start;cursor:pointer;font-size:12px;font-weight:600;color:var(--t2)">
+                <input type="checkbox" style="width:18px;height:18px;margin-top:1px;accent-color:var(--g)" [ngModel]="store.state().caller.confirmed" (ngModelChange)="store.setCaller({ confirmed: $event })">
+                <span>I read the products, quantities and total ({{ q.totalAmount | inr }}) back to the caller and they confirmed the order.</span>
+              </label>
+              @if (store.outlet()?.mobile) { <a class="btn ghost sm mt12" style="width:100%" [href]="'tel:' + store.outlet()!.mobile">📞 Call {{ store.outlet()!.owner || 'outlet' }} · {{ store.outlet()!.mobile }}</a> }
+            </div>
+          } @else {
+            <div class="sec-title">Customer Signature</div>
+            <div class="card p"><app-signature (changed)="store.signature = $event; signed.set(!!$event)" />
+              @if (!signed()) { <div class="tiny mt8">Ask the outlet owner to sign above to confirm the order.</div> }</div>
+          }
         }
       </app-state>
     </div>
@@ -59,6 +81,7 @@ export class OrderSummaryPage {
   q = signal<Quote | null>(null);
   err = signal<string | null>(null);
   signed = signal(false);
+  nonDigit = /\D/g;
   terms: ['CREDIT' | 'CASH' | 'ONLINE', string][] = [['CREDIT', 'Credit'], ['CASH', 'Cash'], ['ONLINE', 'Online']];
   constructor() {
     if (!this.store.outlet() || !this.store.lines().length) { this.router.navigateByUrl(this.store.outlet() ? '/order/matrix' : '/outlets'); return; }
@@ -72,7 +95,12 @@ export class OrderSummaryPage {
   }
   setTerms(t: 'CREDIT' | 'CASH' | 'ONLINE') { this.store.setTerms(t); this.q.set(null); this.load(); }
   next() {
-    if (!this.signed()) { this.ui.error('✍ Customer signature is required'); return; }
+    if (this.store.isPhone()) {
+      const c = this.store.state().caller;
+      if (c.name.trim().length < 2) { this.ui.error('Enter who confirmed the order on the call'); return; }
+      if (c.mobile && !/^[6-9]\d{9}$/.test(c.mobile)) { this.ui.error('Enter a valid 10-digit caller mobile'); return; }
+      if (!c.confirmed) { this.ui.error('📞 Confirm the order with the caller first'); return; }
+    } else if (!this.signed()) { this.ui.error('✍ Customer signature is required'); return; }
     this.router.navigateByUrl('/order/transport');
   }
 }
@@ -119,7 +147,7 @@ export class OrderTransportPage {
   last = signal<{ mode: string; transporter: string; destination: string } | null>(null);
   t = () => this.store.state().transport;
   constructor() {
-    if (!this.store.outlet() || !this.store.signature) { this.router.navigateByUrl('/order/summary'); return; }
+    if (!this.store.outlet() || !this.store.confirmed()) { this.router.navigateByUrl('/order/summary'); return; }
     this.api.get<OrderList>('/orders', { outletId: this.store.outlet()!.id, pageSize: 1 })
       .then(r => { const o = r.items[0]; if (o?.transport.transporter) this.last.set(o.transport); }).catch(() => {});
   }
@@ -136,7 +164,8 @@ export class OrderTransportPage {
     if (!t.immediate && (!t.deliveryDate || t.deliveryDate < this.today)) { this.ui.error('Pick a delivery date from today onwards'); return; }
     this.busy.set(true);
     try {
-      const pos = await this.geo.current(5000);
+      // Phone orders are taken away from the outlet, so no location is captured for them.
+      const pos = this.store.isPhone() ? null : await this.geo.current(5000);
       const o = await this.store.place(pos?.lat, pos?.lng);
       this.router.navigate(['/order/success', o.id], { replaceUrl: true });
     } catch (e) { this.ui.error(errorMessage(e)); }
@@ -159,6 +188,7 @@ export class OrderTransportPage {
           @if (elapsed()) { <div class="chip c-green mb12"><span class="d"></span>⚡ Completed in {{ elapsed() }}</div> }
           <div style="font-size:22px;font-weight:800">Order Placed!</div>
           <div class="muted" style="margin:6px 0 16px">Confirmed for <b>{{ o.outletName }}</b></div>
+          @if (o.channel === 'PHONE') { <div class="chip c-blue mb12"><span class="d"></span>📞 Phone order · confirmed by {{ o.caller?.name }}</div> }
           @if (o.creditHold) { <div class="pc-alert" style="text-align:left">⚠ <span>Held for manager approval — the outlet's credit limit is exceeded.</span></div> }
           <div class="card p" style="width:100%;text-align:left">
             <div class="between" style="margin-bottom:9px"><span class="muted">Order #</span><b>{{ o.orderNo }}</b></div>
@@ -169,8 +199,13 @@ export class OrderTransportPage {
           </div>
           @if (demandQty()) { <button class="btn dmd mt14" type="button" (click)="done('/order/demand')">📝 Submit pending demand ({{ demandQty() }} pcs) →</button> }
           <a class="btn ghost mt14" [href]="waLink(o)" target="_blank" rel="noopener">📲 Share to Customer WhatsApp</a>
-          <button class="btn ghost mt8" type="button" (click)="done('/orders/' + o.id)">📋 Track in Order Status</button>
-          <button class="btn primary mt8" type="button" (click)="done('/home')">← Back to Dashboard</button>
+          @if (auth.isPhoneOrder()) {
+            <button class="btn ghost mt8" type="button" (click)="done('/outlets')">📞 Take another phone order</button>
+            <button class="btn primary mt8" type="button" (click)="exit()">✓ Done · back to login</button>
+          } @else {
+            <button class="btn ghost mt8" type="button" (click)="done('/orders/' + o.id)">📋 Track in Order Status</button>
+            <button class="btn primary mt8" type="button" (click)="done('/home')">← Back to Dashboard</button>
+          }
         }
       </app-state>
       </div>
@@ -178,6 +213,7 @@ export class OrderTransportPage {
 })
 export class OrderSuccessPage {
   id = input.required<string>();
+  auth = inject(AuthService);
   private api = inject(Api);
   private router = inject(Router);
   private store = inject(OrderStore);
@@ -192,7 +228,7 @@ export class OrderSuccessPage {
         this.o.set(o);
         const started = Number(sessionStorage.getItem('mma.orderStart') || 0);
         if (started) { const s = Math.round((Date.now() - started) / 1000); this.elapsed.set(`${Math.floor(s / 60)} min ${s % 60} sec`); }
-        this.mobile = this.store.outlet()?.mobile ?? '';
+        this.mobile = o.caller?.mobile || (this.store.outlet()?.mobile ?? '');
         this.store.finishStockOrder();
         this.demandQty.set(this.store.lines('demand').reduce((s, l) => s + l.qty, 0));
         sessionStorage.removeItem('mma.orderStart');
@@ -201,8 +237,10 @@ export class OrderSuccessPage {
   }
   private mobile = '';
   waLink(o: Order) {
-    const text = `Order ${o.orderNo} confirmed for ${o.outletName}: ${o.totalPieces} pcs, total ${money(o.totalAmount)}. Delivery: ${o.transport.deliveryDate}. Thank you!`;
+    const text = `${o.channel === 'PHONE' ? 'As discussed on the call, o' : 'O'}rder ${o.orderNo} confirmed for ${o.outletName}: ${o.totalPieces} pcs, total ${money(o.totalAmount)}. Delivery: ${o.transport.deliveryDate}. Thank you!`;
     return `https://wa.me/${this.mobile ? '91' + this.mobile : ''}?text=${encodeURIComponent(text)}`;
   }
   done(url: string) { this.router.navigateByUrl(url); }
+  /** Ends a phone order session started from the login page. */
+  exit() { this.store.reset(); this.auth.logout(); }
 }

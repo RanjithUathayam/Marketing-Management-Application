@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { db } from '../db/index.js';
 import { env } from '../config/env.js';
-import { authorize, MANAGERS, scopeFilter, scopeUserIds } from '../middleware/auth.js';
+import { authorize, MANAGERS, PHONE_ORDER_SCOPE, scopeFilter, scopeUserIds } from '../middleware/auth.js';
 import { saveDataUrl } from '../middleware/upload.js';
 import { priceOrder, exceedsCredit } from '../domain/rules.js';
 import { assertOutletVisible, geofenceDistance, lockOutlet } from './outlets.routes.js';
@@ -23,6 +23,13 @@ const quoteSchema = z.object({
 });
 const orderSchema = quoteSchema.extend({
   clientRef: z.string().trim().min(8).max(40),
+  /* VISIT: taken at the outlet and signed by the customer. PHONE: taken over a call — the person who
+     confirmed the order on the call is recorded instead of a signature, and no outlet visit is logged. */
+  channel: z.enum(['VISIT', 'PHONE']).default('VISIT'),
+  caller: z.object({
+    name: z.string().trim().min(2, 'Enter who confirmed the order on the call').max(80),
+    mobile: z.string().trim().regex(/^[6-9]\d{9}$/, 'Enter a valid 10-digit mobile number').optional(),
+  }).optional(),
   instructions: z.string().trim().max(500).optional(),
   signature: z.string().max(800_000).optional(),
   transport: z.object({
@@ -77,11 +84,16 @@ router.post('/orders/quote', async (req, res) => {
 router.post('/orders', async (req, res) => {
   const body = orderSchema.parse(req.body);
   if (body.transport.deliveryDate < localDate()) throw badRequest('Delivery date cannot be in the past');
+  const phone = body.channel === 'PHONE';
+  const viaLogin = req.user.scope === PHONE_ORDER_SCOPE;
+  if (viaLogin && !phone) throw badRequest('Only phone orders can be taken without signing in');
+  if (phone && !body.caller) throw badRequest('Enter who confirmed the order on the call');
+  if (!phone && !body.signature) throw badRequest('Customer signature is required');
   await assertOutletVisible(req.user, body.outletId);
   const existing = await db.one('SELECT OrderId FROM dbo.Orders WHERE UserId = @u AND ClientRef = @ref', { u: req.user.id, ref: body.clientRef });
   if (existing) return res.status(200).json(await loadOrder(existing.OrderId));
 
-  const signaturePath = body.signature ? saveDataUrl('signatures', body.signature) : null;
+  const signaturePath = !phone && body.signature ? saveDataUrl('signatures', body.signature) : null;
   const orderId = await db.transaction(async tx => {
     await lockOutlet(body.outletId, tx);
     const q = await quote(body, tx);
@@ -89,10 +101,14 @@ router.post('/orders', async (req, res) => {
       outletId: body.outletId, userId: req.user.id, changedBy: req.user.id, paymentTerms: body.paymentTerms,
       instructions: body.instructions || null, signaturePath, transport: body.transport,
       lat: body.lat ?? null, lng: body.lng ?? null, clientRef: body.clientRef,
+      channel: body.channel, caller: phone ? body.caller : null, note: phone ? `Phone order · confirmed by ${body.caller.name}${viaLogin ? ' · taken without sign-in' : ''}` : null,
     }, tx);
-    const distanceM = await geofenceDistance(body.outletId, body, req.user.id, tx);
-    await db.exec('dbo.usp_RecordOutletVisit', { UserId: req.user.id, OutletId: body.outletId, VisitDate: localDate(), Ordered: true,
-      NoOrderReason: null, Notes: null, Latitude: body.lat ?? null, Longitude: body.lng ?? null, DistanceM: distanceM }, tx);
+    // A phone order is not a visit: it is neither geofence-checked nor counted towards beat visits / productive calls.
+    if (!phone) {
+      const distanceM = await geofenceDistance(body.outletId, body, req.user.id, tx);
+      await db.exec('dbo.usp_RecordOutletVisit', { UserId: req.user.id, OutletId: body.outletId, VisitDate: localDate(), Ordered: true,
+        NoOrderReason: null, Notes: null, Latitude: body.lat ?? null, Longitude: body.lng ?? null, DistanceM: distanceM }, tx);
+    }
     const mgr = await managerOf(req.user.id, tx);
     if (q.credit.exceeds)
       await notify(mgr, { icon: '⚠️', title: 'Credit limit exceeded', tone: 'red', link: `/orders/${o.OrderId}`,
@@ -108,15 +124,16 @@ export async function insertOrder(q, f, tx) {
     `DECLARE @no VARCHAR(20) = CONCAT('ORD-', YEAR(SYSUTCDATETIME()), '-', NEXT VALUE FOR dbo.OrderNoSeq);
      INSERT dbo.Orders (OrderNo, OutletId, UserId, SubTotal, MrpValue, SchemeValue, TaxAmount, TotalAmount, TotalPieces, PaymentTerms,
                         Instructions, SignaturePath, TransportMode, Transporter, Destination, DeliveryDate, CurrentStatus, CreditHold,
-                        Latitude, Longitude, ClientRef, DemandOrderId)
+                        Latitude, Longitude, ClientRef, DemandOrderId, OrderChannel, CallerName, CallerMobile)
      OUTPUT inserted.OrderId, inserted.OrderNo
      VALUES (@no, @outlet, @u, @sub, @mrp, @scheme, @tax, @total, @pcs, @terms, @instr, @sig, @mode, @trn, @dest, @dd, 'RECEIVED', @hold,
-             @lat, @lng, @ref, @demand)`,
+             @lat, @lng, @ref, @demand, @channel, @callerName, @callerMobile)`,
     { outlet: f.outletId, u: f.userId, sub: q.subTotal, mrp: q.mrpValue, scheme: q.schemeValue, tax: q.taxAmount,
       total: q.totalAmount, pcs: q.totalPieces, terms: f.paymentTerms, instr: f.instructions ?? null, sig: f.signaturePath ?? null,
       mode: f.transport?.mode ?? null, trn: f.transport?.transporter ?? null, dest: f.transport?.destination ?? null,
       dd: f.transport?.deliveryDate ?? null, hold: q.credit.exceeds, lat: f.lat ?? null, lng: f.lng ?? null, ref: f.clientRef ?? null,
-      demand: f.demandOrderId ?? null }, tx);
+      demand: f.demandOrderId ?? null, channel: f.channel ?? 'VISIT', callerName: f.caller?.name ?? null,
+      callerMobile: f.caller?.mobile ?? null }, tx);
   await db.query(
     `INSERT dbo.OrderLines (OrderId, ProductId, ColorId, SizeCode, Sleeve, Qty, UnitPrice, UnitMrp)
      SELECT @id, productId, colorId, size, sleeve, qty, unitPrice, unitMrp
@@ -139,6 +156,7 @@ const orderDto = (o, log = []) => ({
   subTotal: Number(o.SubTotal), mrpValue: Number(o.MrpValue), schemeValue: Number(o.SchemeValue), taxAmount: Number(o.TaxAmount),
   totalAmount: Number(o.TotalAmount), totalPieces: o.TotalPieces, productCount: o.ProductCount,
   paymentTerms: o.PaymentTerms, instructions: o.Instructions, signatureUrl: o.SignaturePath,
+  channel: o.OrderChannel ?? 'VISIT', caller: o.CallerName ? { name: o.CallerName, mobile: o.CallerMobile ?? null } : null,
   transport: { mode: o.TransportMode, transporter: o.Transporter, destination: o.Destination, deliveryDate: toIso(o.DeliveryDate) },
   status: o.CurrentStatus, creditHold: !!o.CreditHold, demandOrderId: o.DemandOrderId ?? null, demandNo: o.DemandNo ?? null, invoiceNo: o.InvoiceNo, lrNo: o.LrNo, receivedBy: o.ReceivedBy,
   log: log.filter(l => l.OrderId === o.OrderId).map(l => ({ status: l.StatusCode, at: l.ChangedAt, by: l.ByName, note: l.Note })),
@@ -167,18 +185,20 @@ async function loadOrder(id) {
   return { ...orderDto(o, log), products };
 }
 
-/* GET /orders?status&search&userId&from&to&page&pageSize */
+/* GET /orders?status&search&userId&outletId&channel&from&to&page&pageSize */
 router.get('/orders', async (req, res) => {
   const pg = paging(req.query);
   const params = {
     status: req.query.status || null, search: req.query.search ? `%${String(req.query.search).trim()}%` : null,
     userId: Number(req.query.userId) || null, outletId: Number(req.query.outletId) || null,
     creditHold: req.query.creditHold === 'true' ? true : null,
+    channel: ['VISIT', 'PHONE'].includes(req.query.channel) ? req.query.channel : null,
     from: req.query.from || null, to: req.query.to || null, offset: pg.offset, size: pg.pageSize,
   };
   const scope = await scopeFilter(req.user, 'o.UserId', params);
   const where = `${scope} AND (@status IS NULL OR o.CurrentStatus = @status) AND (@userId IS NULL OR o.UserId = @userId)
     AND (@outletId IS NULL OR o.OutletId = @outletId) AND (@creditHold IS NULL OR o.CreditHold = @creditHold)
+    AND (@channel IS NULL OR o.OrderChannel = @channel)
     AND (@search IS NULL OR o.OrderNo LIKE @search OR ot.OutletName LIKE @search)
     AND (@from IS NULL OR o.OrderedAt >= @from) AND (@to IS NULL OR o.OrderedAt < DATEADD(DAY, 1, CAST(@to AS DATE)))`;
   const [rows, [tot], counts] = await db.queryMulti(

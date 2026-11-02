@@ -10,6 +10,8 @@ List endpoints accept `page` and `pageSize` and return `{ items, total, page, pa
 |---|---|---|---|
 | POST | `/auth/otp/request` | `{ mobile }` | Sends OTP by SMS + WhatsApp. Same response for unknown numbers. `devOtp` only when `OTP_DEV_ECHO=true`. Rate-limited. |
 | POST | `/auth/otp/verify` | `{ mobile, otp }` | → `{ accessToken, refreshToken, user }`. Max attempts enforced. |
+| POST | `/auth/leave-request` | `{ mobile, empCode, kind, leaveType, fromDate, toDate, hours?, reason }` | **No sign-in.** Apply leave / permission from the login page. Mobile + Employee ID must match one active employee; same rules as `/attendance/leaves`. Filed as `PENDING` with `AppliedVia = LOGIN_PAGE` (flagged to the manager), employee alerted by SMS/WhatsApp + in-app. Rate-limited 5/hour per IP + mobile. → `{ id, status, employeeName, approver }` |
+| POST | `/auth/phone-order-session` | `{ mobile, empCode }` | **No sign-in.** Take a phone order from the login page. Mobile + Employee ID must match one active `EXEC`. Returns a 30-minute access token with scope `PHONE_ORDER` and **no refresh token**; it may only call `GET /beats`, `GET /outlets`, `GET /products`, `/products/matrix`, `/products/by-qr/:code`, `POST /orders/quote`, `POST /orders` (`channel: PHONE` only), `GET /orders`, `GET /orders/:id`, `POST /demand-orders`, `GET /demand-orders/:id` — anything else is `403`. Orders are noted "taken without sign-in"; the executive is alerted by SMS. Rate-limited 10/hour per IP + mobile. → `{ accessToken, scope, expiresInSeconds, user }` |
 | POST | `/auth/refresh` | `{ refreshToken }` | Rotates the refresh token. |
 | POST | `/auth/logout` | `{ refreshToken }` | Revokes the refresh token. |
 | GET | `/auth/me` | | Current user profile. |
@@ -64,8 +66,8 @@ List endpoints accept `page` and `pageSize` and return `{ items, total, page, pa
 | GET | `/products/by-qr/:code` | Product QR lookup |
 | GET | `/products/matrix?ids=1,2` | Colours × sizes with stock status per cell |
 | POST | `/orders/quote` | `{ outletId, lines[], paymentTerms }` → server pricing (full/half sleeve), scheme free goods, MOQ, stopped-cell check, stock on hand (zero-stock cells refused; pieces per colour × size ≤ quantity on hand — use a demand order otherwise), tax, credit-limit check |
-| POST | `/orders` | Quote fields + `clientRef` (idempotency), `instructions`, `signature` (PNG data URL), `transport {mode, transporter, destination, deliveryDate}`, `lat/lng`. One transaction: order, lines, status log, outlet & beat visit; credit-hold + manager notification when over limit |
-| GET | `/orders?status&search&userId&outletId&from&to` | Scope; includes `statusCounts` and `totalAmount` |
+| POST | `/orders` | Quote fields + `clientRef` (idempotency), `channel` (`VISIT` default \| `PHONE`), `instructions`, `signature` (PNG data URL — required for `VISIT`), `caller {name, mobile?}` (required for `PHONE` — who confirmed the order on the call), `transport {mode, transporter, destination, deliveryDate}`, `lat/lng`. One transaction: order, lines, status log, outlet & beat visit (`VISIT` only — phone orders are not geofence-checked or counted as visits); credit-hold + manager notification when over limit |
+| GET | `/orders?status&search&userId&outletId&channel&from&to` | Scope; includes `statusCounts` and `totalAmount`. Each order carries `channel` and `caller` |
 | GET | `/orders/:id` | Lines grouped by product, status timeline |
 | POST | `/orders/:id/advance` | Manager/admin (or ERP service account): next status RECEIVED → APPROVED → DELIVERED → INVOICED → DISPATCHED → COMPLETED, stamps time, invoice/LR numbers |
 

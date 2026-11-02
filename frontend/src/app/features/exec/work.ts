@@ -10,6 +10,7 @@ import { AppBar, Sheet, StateView } from '../../shared/ui.components';
 
 const WORK_TYPES = [
   { k: 'retailer', ic: '🏪', lbl: 'Retailer Visit', sub: 'Beat outlets · order taking' },
+  { k: 'phone', ic: '☎️', lbl: 'Phone Order', sub: 'Take an order over a call · no visit needed' },
   { k: 'joined', ic: '🤝', lbl: 'Joined Work', sub: 'Accompany an executive' },
   { k: 'distributor', ic: '🏭', lbl: 'Distributor Visit', sub: 'Check-in / check-out' },
   { k: 'office', ic: '🏢', lbl: 'Office Visit', sub: 'Check-in / check-out' },
@@ -63,6 +64,7 @@ export class WorkPage {
 
   async pick(k: string) {
     if (k === 'retailer') this.router.navigateByUrl('/outlets');
+    else if (k === 'phone') this.router.navigateByUrl('/outlets?task=phone');
     else if (k === 'distributor' || k === 'office') this.router.navigate(['/work/check', k]);
     else if (k === 'meeting') this.meetOpen.set(true);
     else {

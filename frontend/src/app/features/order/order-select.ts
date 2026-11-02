@@ -2,6 +2,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { Ui } from '../../core/ui.service';
 import { Product } from '../../core/models';
 import { InrPipe, STOCK_HEX } from '../../core/format';
@@ -18,13 +19,17 @@ const CATS = [{ cls: 'shirt', label: 'Shirt' }, { cls: 'trouser', label: 'Mens T
   imports: [FormsModule, AppBar, StateView, InrPipe, QrScanner, SamplePadList],
   host: { class: 'sc' },
   template: `
-    <app-bar title="Take Order" [sub]="store.outlet()?.name" fallback="/outlets">
+    <app-bar [title]="store.isPhone() ? 'Phone Order' : 'Take Order'" [sub]="store.outlet()?.name" fallback="/outlets">
       <div class="row" style="gap:7px">
         <button class="bico" type="button" (click)="scan.set(true)" aria-label="Scan product QR" title="Scan QR">▦</button>
         <button class="bico" type="button" (click)="next()" aria-label="Cart">🛒@if (store.selected().size) {<span class="badgepill">{{ store.selected().size }}</span>}</button>
       </div>
     </app-bar>
-    <div class="loc-bar green"><span>📍</span><span class="loc-txt">{{ store.outlet()?.name }}, {{ store.outlet()?.area }}</span><span class="loc-dot"></span><span>{{ store.outlet()?.distanceKm !== null && store.outlet()?.distanceKm !== undefined ? store.outlet()?.distanceKm + ' km' : '' }}</span></div>
+    @if (store.isPhone()) {
+      <div class="loc-bar phone"><span>📞</span><span class="loc-txt">Phone order · {{ store.outlet()?.name }}, {{ store.outlet()?.area }}</span><span>No visit needed</span></div>
+    } @else {
+      <div class="loc-bar green"><span>📍</span><span class="loc-txt">{{ store.outlet()?.name }}, {{ store.outlet()?.area }}</span><span class="loc-dot"></span><span>{{ store.outlet()?.distanceKm !== null && store.outlet()?.distanceKm !== undefined ? store.outlet()?.distanceKm + ' km' : '' }}</span></div>
+    }
     @if (tab() !== 'Sample Pad') {
       <div class="srch"><div class="sbox"><span>🔍</span><input [(ngModel)]="search" (ngModelChange)="debounced()" placeholder="Search products, colour, brand…" aria-label="Search products"></div></div>
     }
@@ -94,7 +99,9 @@ export class OrderSelectPage {
   ui = inject(Ui);
   private api = inject(Api);
   private router = inject(Router);
-  tabs = TABS;
+  private auth = inject(AuthService);
+  /** Sample pads are not part of a phone order taken without sign-in. */
+  tabs = this.auth.isPhoneOrder() ? TABS.filter(t => t !== 'Sample Pad') : TABS;
   tab = signal('All');
   all = signal<Product[]>([]);
   products = signal<Product[]>([]);
@@ -115,7 +122,7 @@ export class OrderSelectPage {
   constructor() {
     if (!this.store.outlet()) { this.router.navigateByUrl('/outlets'); return; }
     this.api.get<Product[]>('/products').then(p => this.all.set(p)).catch(() => {});
-    this.api.get<{ pending: number }>('/sample-pads').then(r => this.padPending.set(r.pending)).catch(() => {});
+    if (!this.auth.isPhoneOrder()) this.api.get<{ pending: number }>('/sample-pads').then(r => this.padPending.set(r.pending)).catch(() => {});
     this.load();
   }
   setTab(t: string) { this.tab.set(t); if (t !== 'Quick Pick' && t !== 'Sample Pad') this.load(); }

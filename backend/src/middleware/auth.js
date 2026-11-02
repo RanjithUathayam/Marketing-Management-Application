@@ -6,24 +6,43 @@ import { HttpError, forbidden } from '../utils/http.js';
 export const ROLES = { EXEC: 'EXEC', MANAGER: 'MANAGER', ADMIN: 'ADMIN' };
 export const MANAGERS = [ROLES.MANAGER, ROLES.ADMIN];
 
-export function signAccessToken(user) {
-  return jwt.sign({ sub: user.id, role: user.role, emp: user.empCode, name: user.name }, env.jwtSecret, {
-    expiresIn: env.jwtExpiresIn,
+/** Scope of a token issued without OTP sign-in (POST /auth/phone-order-session): order taking only. */
+export const PHONE_ORDER_SCOPE = 'PHONE_ORDER';
+
+export function signAccessToken(user, { scope, expiresIn } = {}) {
+  return jwt.sign({ sub: user.id, role: user.role, emp: user.empCode, name: user.name, ...(scope && { scp: scope }) }, env.jwtSecret, {
+    expiresIn: expiresIn ?? env.jwtExpiresIn,
   });
 }
 
-/** Verifies the bearer token and attaches req.user = { id, role, empCode, name }. */
+/** Verifies the bearer token and attaches req.user = { id, role, empCode, name, scope }. */
 export function authenticate(req, _res, next) {
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : null;
   if (!token) return next(new HttpError(401, 'Authentication required'));
   try {
     const p = jwt.verify(token, env.jwtSecret);
-    req.user = { id: Number(p.sub), role: p.role, empCode: p.emp, name: p.name };
+    req.user = { id: Number(p.sub), role: p.role, empCode: p.emp, name: p.name, scope: p.scp ?? null };
     next();
   } catch {
     next(new HttpError(401, 'Session expired — please sign in again'));
   }
+}
+
+/* Endpoints a PHONE_ORDER token may call: pick the outlet, browse products, quote and place the order
+   (and a demand order for zero-stock sizes), then read back what was just placed. */
+const PHONE_ORDER_ROUTES = [
+  ['GET', /^\/beats$/], ['GET', /^\/outlets$/],
+  ['GET', /^\/products$/], ['GET', /^\/products\/matrix$/], ['GET', /^\/products\/by-qr\/[^/]+$/],
+  ['POST', /^\/orders\/quote$/], ['POST', /^\/orders$/], ['GET', /^\/orders$/], ['GET', /^\/orders\/\d+$/],
+  ['POST', /^\/demand-orders$/], ['GET', /^\/demand-orders\/\d+$/],
+];
+
+/** Confines scoped tokens to their endpoints; full sign-in tokens pass through. */
+export function restrictScope(req, _res, next) {
+  if (!req.user?.scope) return next();
+  if (req.user.scope === PHONE_ORDER_SCOPE && PHONE_ORDER_ROUTES.some(([m, re]) => m === req.method && re.test(req.path))) return next();
+  next(forbidden('Sign in with OTP to use this — the phone order session only takes orders'));
 }
 
 export const authorize = (...roles) => (req, _res, next) =>

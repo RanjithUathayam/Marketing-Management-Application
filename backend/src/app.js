@@ -6,7 +6,7 @@ import pinoHttp from 'pino-http';
 import { env } from './config/env.js';
 import { logger } from './utils/logger.js';
 import { db } from './db/index.js';
-import { authenticate } from './middleware/auth.js';
+import { authenticate, restrictScope } from './middleware/auth.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { router as auth } from './modules/auth.routes.js';
 import { router as attendance } from './modules/attendance.routes.js';
@@ -40,7 +40,7 @@ export function createApp() {
 
   app.use('/api/auth', auth);
   const api = express.Router();
-  api.use(authenticate);
+  api.use(authenticate, restrictScope);
   api.use('/attendance', attendance);
   api.use('/admin', admin);
   for (const r of [beats, outlets, products, orders, demand, field, insights, samplePads]) api.use(r);
