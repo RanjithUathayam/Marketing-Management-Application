@@ -30,9 +30,9 @@ import { BeatChangeSheet } from '../../shared/beat-change-sheet';
                   <div style="font-size:17px;font-weight:800;margin-top:3px">{{ tb.name }}</div>
                   <div style="font-size:11.5px;opacity:.85;margin-top:2px">{{ tb.outlets }} outlets · {{ tb.pending }} pending</div>
                   @if (d.pendingBeatChange; as pc) { <div style="font-size:11px;font-weight:700;margin-top:6px">⏳ Change to {{ pc.toBeat }} awaiting approval</div> }</div>
-                <div class="row" style="gap:8px">
-                  <button class="bar-preview" type="button" [disabled]="!!d.pendingBeatChange" (click)="bcOpen.set(true)">⇄ Change Beat</button>
+                <div style="display:flex;flex-direction:column;align-items:stretch;gap:8px">
                   <button class="bar-preview" type="button" [routerLink]="['/outlets']" [queryParams]="{ beatId: tb.id }">Start →</button>
+                  <button class="bar-preview red" type="button" [disabled]="!!d.pendingBeatChange" (click)="bcOpen.set(true)">⇄ Change Beat</button>
                 </div>
               </div>
             </div>

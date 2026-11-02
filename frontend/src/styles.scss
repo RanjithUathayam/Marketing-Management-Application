@@ -38,6 +38,7 @@ a{color:inherit;text-decoration:none}
 .badgepill{position:absolute;top:-3px;right:-3px;background:#f59e0b;color:#fff;font-size:9px;font-weight:800;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px}
 .notif-dot{width:8px;height:8px;border-radius:50%;background:var(--r);position:absolute;top:6px;right:6px}
 .bar-preview{background:#fff;color:var(--g);border:none;border-radius:20px;padding:7px 13px;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.bar-preview.red{background:#ef4444;color:#fff}
 .bar-preview:disabled{opacity:.6;cursor:not-allowed}
 
 /* ── LOCATION BAR ── */
